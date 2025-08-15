@@ -387,6 +387,9 @@ def main():
     st.title("🧠 LLM Reflection Lab")
     st.markdown("Watch as the LLM iteratively refines its thinking and responses through self-reflection")
     
+    # Progress indicator placeholder at the top (will be used during iterations)
+    progress_placeholder = st.empty()
+    
     # Sidebar configuration
     with st.sidebar:
         st.header("⚙️ Configuration")
@@ -979,19 +982,12 @@ def main():
     if "active_loop" in st.session_state and st.session_state.active_loop and st.session_state.active_loop.get("is_running"):
         active_loop = st.session_state.active_loop
         
-        # Show progress indicator
-        progress_container = st.container()
-        with progress_container:
-            col_prog1, col_prog2 = st.columns([1, 4])
-            with col_prog1:
-                st.markdown("### 🔄 Processing")
-            with col_prog2:
-                progress_text = st.empty()
-                current_iter = len(active_loop["iterations"]) + 1
-                if yolo_mode:
-                    progress_text.info(f"🎯 YOLO Mode: Processing iteration {current_iter} (running until convergence...)")
-                else:
-                    progress_text.info(f"Processing iteration {current_iter} of {num_iterations}...")
+        # Show progress indicator at the top
+        current_iter = len(active_loop["iterations"]) + 1
+        if yolo_mode:
+            progress_placeholder.info(f"🎯 YOLO Mode: Processing iteration {current_iter} (running until convergence...)")
+        else:
+            progress_placeholder.info(f"🔄 Processing iteration {current_iter} of {num_iterations}...")
         
         # Create client and thinking loop
         client = OpenAIReasoningClient(api_key, model_name, base_url)
@@ -1080,6 +1076,9 @@ def main():
             st.session_state.total_elapsed_time += active_loop.get("elapsed_time", 0)
             st.session_state.thinking_loops.append(active_loop)
             st.session_state.active_loop = None
+            
+            # Clear progress indicator
+            progress_placeholder.empty()
             
             # Auto-save the experiment
             auto_save_experiment()
