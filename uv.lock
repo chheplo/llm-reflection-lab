@@ -500,6 +500,44 @@ wheels = [
 ]
 
 [[package]]
+name = "llm-reflection-lab"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "networkx", version = "3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "openai" },
+    { name = "plotly" },
+    { name = "pyvis" },
+    { name = "requests" },
+    { name = "scikit-learn" },
+    { name = "streamlit" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "networkx", specifier = ">=3.4.2" },
+    { name = "numpy", specifier = ">=2.2.6" },
+    { name = "openai", specifier = ">=1.99.9" },
+    { name = "plotly", specifier = ">=6.3.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.4" },
+    { name = "pyvis", specifier = ">=0.3.2" },
+    { name = "requests", specifier = ">=2.32.4" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.6" },
+    { name = "scikit-learn", specifier = ">=1.7.1" },
+    { name = "streamlit", specifier = ">=1.48.1" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "markupsafe"
 version = "3.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1680,44 +1718,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/0a/d4/2b0cd0fe285e14b36
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/30/643397144bfbfec6f6ef821f36f33e57d35946c44a2352d3c9f0ae847619/tenacity-9.1.2-py3-none-any.whl", hash = "sha256:f77bf36710d8b73a50b2dd155c97b870017ad21afe6ab300326b0371b3b05138", size = 28248, upload-time = "2025-04-02T08:25:07.678Z" },
 ]
-
-[[package]]
-name = "thinking-loop-experiment"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "networkx", version = "3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numpy", version = "2.3.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "openai" },
-    { name = "plotly" },
-    { name = "pyvis" },
-    { name = "requests" },
-    { name = "scikit-learn" },
-    { name = "streamlit" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "networkx", specifier = ">=3.4.2" },
-    { name = "numpy", specifier = ">=2.2.6" },
-    { name = "openai", specifier = ">=1.99.9" },
-    { name = "plotly", specifier = ">=6.3.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.4" },
-    { name = "pyvis", specifier = ">=0.3.2" },
-    { name = "requests", specifier = ">=2.32.4" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.6" },
-    { name = "scikit-learn", specifier = ">=1.7.1" },
-    { name = "streamlit", specifier = ">=1.48.1" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "threadpoolctl"

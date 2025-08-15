@@ -2,7 +2,7 @@
 
 An interactive research tool for exploring recursive reasoning in Large Language Models through iterative self-reflection. Watch as LLMs refine their thinking across multiple iterations without external feedback.
 
-![Python](https://img.shields.io/badge/python-3.8%2B-blue)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Streamlit](https://img.shields.io/badge/streamlit-1.40%2B-red)
 ![License](https://img.shields.io/badge/license-MIT-green)
 

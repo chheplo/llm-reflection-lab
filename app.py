@@ -19,7 +19,7 @@ from src.visualizations import (
 
 # Page configuration
 st.set_page_config(
-    page_title="Thinking Loop Experiment",
+    page_title="LLM Reflection Lab",
     page_icon="🧠",
     layout="wide"
 )
@@ -354,7 +354,7 @@ def main():
     # Show edit prompts modal if requested
     show_edit_prompts_modal()
     
-    st.title("🧠 Thinking Loop Experiment")
+    st.title("🧠 LLM Reflection Lab")
     st.markdown("Watch as the LLM iteratively refines its thinking and responses through self-reflection")
     
     # Sidebar configuration
