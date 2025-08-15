@@ -9,6 +9,10 @@ from typing import Dict, List, Optional
 import requests
 import streamlit as st
 from openai import OpenAI
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import plotly.graph_objects as go
 
 # Import visualization module
 from src.visualizations import (
@@ -194,11 +198,20 @@ class ThinkingLoop:
         
         return None
     
-    def run_loop(self, question: str, num_iterations: int, progress_callback=None) -> List[Dict]:
-        """Run the complete thinking loop for specified iterations"""
+    def run_loop(self, question: str, num_iterations: int, progress_callback=None, yolo_mode: bool = False, convergence_threshold: float = 0.99) -> List[Dict]:
+        """Run the complete thinking loop for specified iterations
+        
+        Args:
+            question: The question to answer
+            num_iterations: Maximum number of iterations
+            progress_callback: Optional callback for progress updates
+            yolo_mode: If True, stop early when convergence is detected
+            convergence_threshold: Similarity threshold for convergence (default 0.99)
+        """
         self.iterations = []
         reasoning = ""
         response = ""
+        converged = False
         
         for i in range(num_iterations):
             if progress_callback:
@@ -209,12 +222,28 @@ class ThinkingLoop:
             if iteration:
                 reasoning = iteration["reasoning"]
                 response = iteration["response"]
+                
+                # Check for convergence in YOLO mode
+                if yolo_mode and i > 0:  # Need at least 2 iterations to compare
+                    prev_text = f"{self.iterations[-1]['reasoning']} {self.iterations[-1]['response']}"
+                    curr_text = f"{iteration['reasoning']} {iteration['response']}"
+                    
+                    similarity = calculate_similarity(prev_text, curr_text)
+                    iteration['similarity_to_previous'] = similarity
+                    
+                    if similarity >= convergence_threshold:
+                        converged = True
+                        st.success(f"🎯 YOLO Mode: Convergence detected at iteration {i + 1} (similarity: {similarity:.3f})")
+                        break
             else:
                 st.error(f"Failed at iteration {i + 1}")
                 break
             
             # Small delay to avoid rate limiting
             time.sleep(1)
+        
+        if yolo_mode and not converged and len(self.iterations) == num_iterations:
+            st.info(f"🎯 YOLO Mode: Completed all {num_iterations} iterations without convergence")
         
         return self.iterations
 
@@ -357,6 +386,9 @@ def main():
     
     st.title("🧠 LLM Reflection Lab")
     st.markdown("Watch as the LLM iteratively refines its thinking and responses through self-reflection")
+    
+    # Progress indicator placeholder at the top (will be used during iterations)
+    progress_placeholder = st.empty()
     
     # Sidebar configuration
     with st.sidebar:
@@ -522,6 +554,25 @@ def main():
             help="Number of thinking iterations to refine the response"
         )
         
+        # YOLO Mode toggle
+        yolo_mode = st.checkbox(
+            "🎯 YOLO Mode (Run until convergence)", 
+            value=False,
+            help="Run iterations indefinitely until consecutive iterations reach similarity threshold. Ignores iteration count."
+        )
+        
+        convergence_threshold = 0.99  # Default value
+        if yolo_mode:
+            convergence_threshold = st.slider(
+                "Convergence Threshold",
+                min_value=0.80,
+                max_value=0.99,
+                value=0.99,
+                step=0.01,
+                help="Similarity threshold to detect convergence (0.99 = 99% similar)"
+            )
+            st.info(f"🎯 YOLO Mode: Will run indefinitely until convergence is detected (similarity ≥ {convergence_threshold:.0%}). Iteration slider is ignored. Safety limit: 100 iterations.")
+        
         # Display token usage and performance metrics
         if st.session_state.total_tokens_used > 0:
             st.subheader("📊 Performance Metrics")
@@ -627,102 +678,16 @@ def main():
             else:
                 st.warning("Please enter a question first.")
         
-        # Handle active thinking loop
+        # Add stop button for active loops
         if "active_loop" in st.session_state and st.session_state.active_loop and st.session_state.active_loop.get("is_running"):
-            active_loop = st.session_state.active_loop
-            
-            # Add stop button for running loops
             if st.button("⏹️ Stop Current Loop", type="secondary", use_container_width=True):
+                active_loop = st.session_state.active_loop
                 active_loop["is_running"] = False
                 # Move to completed loops even if not all iterations done
                 st.session_state.total_tokens_used += active_loop.get("tokens_used", 0)
                 st.session_state.thinking_loops.append(active_loop)
                 st.session_state.active_loop = None
                 st.success(f"Stopped at iteration {len(active_loop['iterations'])}")
-                time.sleep(1)
-                st.rerun()
-            
-            # Create client and thinking loop
-            client = OpenAIReasoningClient(api_key, model_name, base_url)
-            thinking_loop = ThinkingLoop(client)
-            
-            # Progress indicator
-            progress_container = st.container()
-            with progress_container:
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-            
-            # Run iterations one by one with display updates
-            current_iteration = len(active_loop["iterations"])
-            
-            if current_iteration < num_iterations:
-                # Update progress
-                progress_bar.progress((current_iteration + 1) / num_iterations)
-                status_text.text(f"🔄 Processing iteration {current_iteration + 1} of {num_iterations}...")
-                
-                # Get previous reasoning and response if available
-                if active_loop["iterations"]:
-                    prev_iter = active_loop["iterations"][-1]
-                    prev_reasoning = prev_iter["reasoning"]
-                    prev_response = prev_iter["response"]
-                else:
-                    prev_reasoning = ""
-                    prev_response = ""
-                
-                # Run single iteration
-                iteration = thinking_loop.run_iteration(
-                    active_loop["question"],
-                    prev_reasoning,
-                    prev_response,
-                    current_iteration + 1
-                )
-                
-                if iteration:
-                    # Add iteration to active loop
-                    active_loop["iterations"].append(iteration)
-                    if iteration.get("usage"):
-                        active_loop["tokens_used"] += iteration["usage"].get("total_tokens", 0)
-                    if iteration.get("elapsed_time"):
-                        active_loop["elapsed_time"] = active_loop.get("elapsed_time", 0) + iteration["elapsed_time"]
-                    
-                    # Debug: Show if reasoning was extracted
-                    if st.session_state.get("debug_mode", False):
-                        st.sidebar.info(f"Iteration {current_iteration + 1}: Reasoning extracted: {'Yes' if iteration['reasoning'] else 'No'}")
-                        if not iteration['reasoning']:
-                            st.sidebar.warning("No reasoning found - check response format")
-                    
-                    # Update session state
-                    st.session_state.active_loop = active_loop
-                    
-                    # Small delay for visibility
-                    time.sleep(0.5)
-                    
-                    # Trigger rerun to show updates
-                    st.rerun()
-                else:
-                    st.error(f"Failed at iteration {current_iteration + 1}")
-                    active_loop["is_running"] = False
-            else:
-                # All iterations complete
-                progress_bar.progress(1.0)
-                status_text.text("")
-                
-                # Move to completed loops
-                st.session_state.total_tokens_used += active_loop["tokens_used"]
-                st.session_state.total_elapsed_time += active_loop.get("elapsed_time", 0)
-                st.session_state.thinking_loops.append(active_loop)
-                st.session_state.active_loop = None
-                
-                # Auto-save the experiment
-                auto_save_experiment()
-                
-                # Pre-compute visualizations in background
-                try:
-                    compute_all_visualizations_async(active_loop['iterations'])
-                except Exception:
-                    pass  # Silent fail for background computation
-                
-                st.success(f"✅ Completed {len(active_loop['iterations'])} iterations! Used {active_loop['tokens_used']:,} tokens.")
                 time.sleep(1)
                 st.rerun()
         
@@ -768,23 +733,92 @@ def main():
         
         # Determine which loop to display (active or latest completed)
         evolution_loop = None
+        is_evolving = False
+        
+        # Check for active loop first
         if "active_loop" in st.session_state and st.session_state.active_loop:
             evolution_loop = st.session_state.active_loop
-            is_evolving = True
+            is_evolving = st.session_state.active_loop.get("is_running", False)
+            # Debug info
+            if st.session_state.get("debug_mode", False):
+                st.sidebar.write(f"Active loop found: {len(evolution_loop.get('iterations', []))} iterations")
         elif st.session_state.thinking_loops:
             evolution_loop = st.session_state.thinking_loops[-1]
             is_evolving = False
+        
+        # Show status if we have an active loop but no iterations yet
+        if evolution_loop and is_evolving and not evolution_loop.get('iterations'):
+            st.info("🔄 Starting iterations...")
+            st.caption("First iteration will appear here shortly...")
+        
+        # Always show iterations if they exist, regardless of is_evolving state
+        if evolution_loop and evolution_loop.get('iterations'):
+            # Show status caption
+            num_iters = len(evolution_loop['iterations'])
+            if is_evolving:
+                if yolo_mode:
+                    st.caption(f"🎯 YOLO Mode - Iteration {num_iters} (running until convergence)")
+                else:
+                    st.caption(f"🔄 Live updates - Iteration {num_iters} of {num_iterations}")
+            else:
+                if evolution_loop.get('converged_early'):
+                    st.caption(f"✅ Converged at iteration {evolution_loop.get('convergence_iteration', num_iters)}")
+                else:
+                    st.caption(f"✅ Completed {num_iters} iterations")
+        
+        # Show convergence chart if in YOLO mode and we have similarity data
+        if yolo_mode and evolution_loop and evolution_loop.get('iterations'):
+            similarities = []
+            for i, iter_data in enumerate(evolution_loop['iterations']):
+                if i == 0:
+                    similarities.append(0.0)  # First iteration has no previous to compare
+                else:
+                    sim = iter_data.get('similarity_to_previous', 0.0)
+                    similarities.append(sim)
+            
+            if len(similarities) >= 1:  # Show chart even with one iteration
+                # Create convergence chart
+                fig = go.Figure()
+                
+                # Add similarity line
+                fig.add_trace(go.Scatter(
+                    x=list(range(1, len(similarities) + 1)),
+                    y=similarities,
+                    mode='lines+markers',
+                    name='Similarity',
+                    line=dict(color='blue', width=2),
+                    marker=dict(size=8)
+                ))
+                
+                # Add convergence threshold line
+                fig.add_trace(go.Scatter(
+                    x=[1, len(similarities)],
+                    y=[convergence_threshold, convergence_threshold],
+                    mode='lines',
+                    name=f'Threshold ({convergence_threshold:.2f})',
+                    line=dict(color='red', width=2, dash='dash')
+                ))
+                
+                fig.update_layout(
+                    title="🎯 YOLO Mode: Convergence Progress",
+                    xaxis_title="Iteration",
+                    yaxis_title="Similarity to Previous",
+                    yaxis=dict(range=[0, 1.05]),
+                    height=300,
+                    showlegend=True,
+                    hovermode='x unified'
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
         
         # Show visualization buttons and modals if we have iterations
         if evolution_loop and evolution_loop.get('iterations'):
             show_visualization_buttons(evolution_loop['iterations'])
             show_visualization_modals(evolution_loop['iterations'])
-        
-        if evolution_loop and evolution_loop.get('iterations'):
-            if is_evolving:
-                st.caption(f"🔄 Live updates - Iteration {len(evolution_loop['iterations'])} of {num_iterations}")
-            else:
-                st.caption(f"✅ Completed {len(evolution_loop['iterations'])} iterations")
+            
+            # Display iterations section
+            st.divider()
+            st.subheader("Iterations")
             
             # Pagination controls for large iteration counts
             items_per_page = 10
@@ -794,6 +828,10 @@ def main():
             # Initialize page number if needed
             if "page_number" not in st.session_state:
                 st.session_state.page_number = 0
+            
+            # If actively evolving, jump to the last page to show latest iteration
+            if is_evolving:
+                st.session_state.page_number = total_pages - 1
             
             # Ensure page number is valid
             if st.session_state.page_number >= total_pages:
@@ -836,10 +874,14 @@ def main():
                     # Start with all iterations collapsed (no auto-expand)
                     
                     # Create expander for each iteration with click handler
+                    similarity_text = ""
+                    if iteration.get('similarity_to_previous') is not None:
+                        similarity_text = f" | Similarity: {iteration['similarity_to_previous']:.3f}"
+                    
                     if st.button(
                         f"🔄 Iteration {iteration['iteration_number']} "
                         f"{'(Latest)' if actual_idx == len(evolution_loop['iterations']) - 1 else ''} "
-                        f"- {iteration.get('usage', {}).get('total_tokens', 0):,} tokens",
+                        f"- {iteration.get('usage', {}).get('total_tokens', 0):,} tokens{similarity_text}",
                         key=f"btn_{iteration_key}",
                         use_container_width=True
                     ):
@@ -919,8 +961,10 @@ def main():
                                             f"{curr_tokens:,}",
                                             f"{token_delta:+,}"
                                         )
-        else:
-            st.info("👋 No thinking loops yet. Start by asking a question!")
+        elif not evolution_loop or not evolution_loop.get('iterations'):
+            # Only show if there's truly nothing to display
+            if not evolution_loop:
+                st.info("👋 No thinking loops yet. Start by asking a question!")
             st.markdown("""
             ### How it works:
             1. **Ask a question** - Preferably something complex that benefits from deep thinking
@@ -933,6 +977,128 @@ def main():
             - Creative tasks
             - Analysis and reasoning
             """)
+    
+    # Handle active thinking loop iterations (moved here to allow both columns to render)
+    if "active_loop" in st.session_state and st.session_state.active_loop and st.session_state.active_loop.get("is_running"):
+        active_loop = st.session_state.active_loop
+        
+        # Show progress indicator at the top
+        current_iter = len(active_loop["iterations"]) + 1
+        if yolo_mode:
+            progress_placeholder.info(f"🎯 YOLO Mode: Processing iteration {current_iter} (running until convergence...)")
+        else:
+            progress_placeholder.info(f"🔄 Processing iteration {current_iter} of {num_iterations}...")
+        
+        # Create client and thinking loop
+        client = OpenAIReasoningClient(api_key, model_name, base_url)
+        thinking_loop = ThinkingLoop(client)
+        
+        # Run iterations one by one with display updates
+        current_iteration = len(active_loop["iterations"])
+        
+        # Determine if we should continue
+        should_continue = False
+        if yolo_mode:
+            # In YOLO mode, continue until convergence or safety limit
+            should_continue = (current_iteration < 100) and (not active_loop.get("converged_early", False))
+        else:
+            # In normal mode, respect the iteration count
+            should_continue = (current_iteration < num_iterations) and (not active_loop.get("converged_early", False))
+        
+        if should_continue:
+            # Get previous reasoning and response if available
+            if active_loop["iterations"]:
+                prev_iter = active_loop["iterations"][-1]
+                prev_reasoning = prev_iter["reasoning"]
+                prev_response = prev_iter["response"]
+            else:
+                prev_reasoning = ""
+                prev_response = ""
+            
+            # Run single iteration
+            iteration = thinking_loop.run_iteration(
+                active_loop["question"],
+                prev_reasoning,
+                prev_response,
+                current_iteration + 1
+            )
+            
+            if iteration:
+                # Check for convergence in YOLO mode
+                converged = False
+                if yolo_mode and current_iteration >= 1:  # Need at least 2 iterations to compare (0-indexed)
+                    prev_text = f"{prev_reasoning} {prev_response}"
+                    curr_text = f"{iteration['reasoning']} {iteration['response']}"
+                    
+                    similarity = calculate_similarity(prev_text, curr_text)
+                    iteration['similarity_to_previous'] = similarity
+                    
+                    if similarity >= convergence_threshold:
+                        converged = True
+                        st.success(f"🎯 YOLO Mode: Convergence detected at iteration {current_iteration + 1} (similarity: {similarity:.3f} ≥ {convergence_threshold:.2f})")
+                
+                # Add iteration to active loop
+                active_loop["iterations"].append(iteration)
+                if iteration.get("usage"):
+                    active_loop["tokens_used"] += iteration["usage"].get("total_tokens", 0)
+                if iteration.get("elapsed_time"):
+                    active_loop["elapsed_time"] = active_loop.get("elapsed_time", 0) + iteration["elapsed_time"]
+                
+                # Debug: Show if reasoning was extracted
+                if st.session_state.get("debug_mode", False):
+                    st.sidebar.info(f"Iteration {current_iteration + 1}: Reasoning extracted: {'Yes' if iteration['reasoning'] else 'No'}")
+                    if not iteration['reasoning']:
+                        st.sidebar.warning("No reasoning found - check response format")
+                
+                # Update session state
+                st.session_state.active_loop = active_loop
+                
+                # If converged in YOLO mode, mark as complete
+                if converged:
+                    active_loop["is_running"] = False
+                    active_loop["converged_early"] = True
+                    active_loop["convergence_iteration"] = current_iteration + 1
+                    active_loop["convergence_threshold"] = convergence_threshold
+                    active_loop["final_similarity"] = similarity
+                
+                # Small delay for visibility
+                time.sleep(0.5)
+                
+                # Trigger rerun to show updates
+                st.rerun()
+            else:
+                st.error(f"Failed at iteration {current_iteration + 1}")
+                active_loop["is_running"] = False
+        else:
+            # All iterations complete
+            # Move to completed loops
+            st.session_state.total_tokens_used += active_loop["tokens_used"]
+            st.session_state.total_elapsed_time += active_loop.get("elapsed_time", 0)
+            st.session_state.thinking_loops.append(active_loop)
+            st.session_state.active_loop = None
+            
+            # Clear progress indicator
+            progress_placeholder.empty()
+            
+            # Auto-save the experiment
+            auto_save_experiment()
+            
+            # Pre-compute visualizations in background
+            try:
+                compute_all_visualizations_async(active_loop['iterations'])
+            except Exception:
+                pass  # Silent fail for background computation
+            
+            if active_loop.get("converged_early"):
+                final_sim = active_loop.get('final_similarity', 0.99)
+                threshold = active_loop.get('convergence_threshold', 0.99)
+                st.success(f"✅ YOLO Mode: Converged at iteration {active_loop['convergence_iteration']}! Final similarity: {final_sim:.3f} (threshold: {threshold:.2f}). Used {active_loop['tokens_used']:,} tokens.")
+            elif yolo_mode and len(active_loop['iterations']) >= 100:
+                st.warning(f"⚠️ YOLO Mode: Reached safety limit of 100 iterations without convergence. Used {active_loop['tokens_used']:,} tokens.")
+            else:
+                st.success(f"✅ Completed {len(active_loop['iterations'])} iterations! Used {active_loop['tokens_used']:,} tokens.")
+            time.sleep(1)
+            st.rerun()
     
     # History section at the bottom
     if st.session_state.thinking_loops and len(st.session_state.thinking_loops) > 1:
@@ -984,6 +1150,21 @@ def auto_save_experiment():
     except Exception:
         # Silent fail for auto-save
         return None
+
+def calculate_similarity(text1: str, text2: str) -> float:
+    """Calculate similarity between two texts using TF-IDF and cosine similarity"""
+    if not text1 or not text2:
+        return 0.0
+    
+    try:
+        # Use TF-IDF for text vectorization
+        vectorizer = TfidfVectorizer(max_features=100, stop_words='english')
+        tfidf_matrix = vectorizer.fit_transform([text1, text2])
+        similarity_matrix = cosine_similarity(tfidf_matrix)
+        return float(similarity_matrix[0][1])
+    except:
+        # Fallback for edge cases
+        return 1.0 if text1 == text2 else 0.0
 
 def markdown_to_html(text):
     """Convert markdown text to HTML"""
