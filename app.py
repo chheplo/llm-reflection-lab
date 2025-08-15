@@ -12,6 +12,7 @@ from openai import OpenAI
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import plotly.graph_objects as go
 
 # Import visualization module
 from src.visualizations import (
@@ -864,6 +865,51 @@ def main():
             evolution_loop = st.session_state.thinking_loops[-1]
             is_evolving = False
         
+        # Show convergence chart if in YOLO mode and we have similarity data
+        if yolo_mode and evolution_loop and evolution_loop.get('iterations'):
+            similarities = []
+            for i, iter_data in enumerate(evolution_loop['iterations']):
+                if i == 0:
+                    similarities.append(0.0)  # First iteration has no previous to compare
+                else:
+                    sim = iter_data.get('similarity_to_previous', 0.0)
+                    similarities.append(sim)
+            
+            if len(similarities) > 1:
+                # Create convergence chart
+                fig = go.Figure()
+                
+                # Add similarity line
+                fig.add_trace(go.Scatter(
+                    x=list(range(1, len(similarities) + 1)),
+                    y=similarities,
+                    mode='lines+markers',
+                    name='Similarity',
+                    line=dict(color='blue', width=2),
+                    marker=dict(size=8)
+                ))
+                
+                # Add convergence threshold line
+                fig.add_trace(go.Scatter(
+                    x=[1, len(similarities)],
+                    y=[convergence_threshold, convergence_threshold],
+                    mode='lines',
+                    name=f'Threshold ({convergence_threshold:.2f})',
+                    line=dict(color='red', width=2, dash='dash')
+                ))
+                
+                fig.update_layout(
+                    title="🎯 YOLO Mode: Convergence Progress",
+                    xaxis_title="Iteration",
+                    yaxis_title="Similarity to Previous",
+                    yaxis=dict(range=[0, 1.05]),
+                    height=300,
+                    showlegend=True,
+                    hovermode='x unified'
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+        
         # Show visualization buttons and modals if we have iterations
         if evolution_loop and evolution_loop.get('iterations'):
             show_visualization_buttons(evolution_loop['iterations'])
@@ -871,9 +917,15 @@ def main():
         
         if evolution_loop and evolution_loop.get('iterations'):
             if is_evolving:
-                st.caption(f"🔄 Live updates - Iteration {len(evolution_loop['iterations'])} of {num_iterations}")
+                if yolo_mode:
+                    st.caption(f"🎯 YOLO Mode - Iteration {len(evolution_loop['iterations'])} (running until convergence)")
+                else:
+                    st.caption(f"🔄 Live updates - Iteration {len(evolution_loop['iterations'])} of {num_iterations}")
             else:
-                st.caption(f"✅ Completed {len(evolution_loop['iterations'])} iterations")
+                if evolution_loop.get('converged_early'):
+                    st.caption(f"✅ Converged at iteration {evolution_loop.get('convergence_iteration', len(evolution_loop['iterations']))}")
+                else:
+                    st.caption(f"✅ Completed {len(evolution_loop['iterations'])} iterations")
             
             # Pagination controls for large iteration counts
             items_per_page = 10
@@ -883,6 +935,10 @@ def main():
             # Initialize page number if needed
             if "page_number" not in st.session_state:
                 st.session_state.page_number = 0
+            
+            # If actively evolving, jump to the last page to show latest iteration
+            if is_evolving:
+                st.session_state.page_number = total_pages - 1
             
             # Ensure page number is valid
             if st.session_state.page_number >= total_pages:
