@@ -1,0 +1,37 @@
+[project]
+name = "llm-reflection-lab"
+version = "0.1.0"
+description = "An interactive research tool for exploring recursive reasoning in LLMs through iterative self-reflection"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "streamlit>=1.48.1",
+    "openai>=1.99.9",
+    "requests>=2.32.4",
+    "plotly>=6.3.0",
+    "pyvis>=0.3.2",
+    "networkx>=3.4.2",
+    "numpy>=2.2.6",
+    "scikit-learn>=1.7.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.9.6",
+    "pytest>=8.3.4",
+]
+
+[build-system]
+requires = ["setuptools>=75.7.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["app"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]  # Line too long - handled by formatter
