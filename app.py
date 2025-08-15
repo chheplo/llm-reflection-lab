@@ -554,11 +554,20 @@ def main():
         yolo_mode = st.checkbox(
             "🎯 YOLO Mode (Run until convergence)", 
             value=False,
-            help="Run iterations indefinitely until consecutive iterations reach 99% similarity. Ignores iteration count."
+            help="Run iterations indefinitely until consecutive iterations reach similarity threshold. Ignores iteration count."
         )
         
+        convergence_threshold = 0.99  # Default value
         if yolo_mode:
-            st.info("🎯 YOLO Mode: Will run indefinitely until convergence is detected (similarity ≥ 0.99). Iteration slider is ignored. Safety limit: 100 iterations.")
+            convergence_threshold = st.slider(
+                "Convergence Threshold",
+                min_value=0.80,
+                max_value=0.99,
+                value=0.99,
+                step=0.01,
+                help="Similarity threshold to detect convergence (0.99 = 99% similar)"
+            )
+            st.info(f"🎯 YOLO Mode: Will run indefinitely until convergence is detected (similarity ≥ {convergence_threshold:.0%}). Iteration slider is ignored. Safety limit: 100 iterations.")
         
         # Display token usage and performance metrics
         if st.session_state.total_tokens_used > 0:
@@ -739,9 +748,9 @@ def main():
                         similarity = calculate_similarity(prev_text, curr_text)
                         iteration['similarity_to_previous'] = similarity
                         
-                        if similarity >= 0.99:  # Convergence threshold
+                        if similarity >= convergence_threshold:
                             converged = True
-                            st.success(f"🎯 YOLO Mode: Convergence detected at iteration {current_iteration + 1} (similarity: {similarity:.3f})")
+                            st.success(f"🎯 YOLO Mode: Convergence detected at iteration {current_iteration + 1} (similarity: {similarity:.3f} ≥ {convergence_threshold:.2f})")
                     
                     # Add iteration to active loop
                     active_loop["iterations"].append(iteration)
@@ -764,6 +773,8 @@ def main():
                         active_loop["is_running"] = False
                         active_loop["converged_early"] = True
                         active_loop["convergence_iteration"] = current_iteration + 1
+                        active_loop["convergence_threshold"] = convergence_threshold
+                        active_loop["final_similarity"] = similarity
                     
                     # Small delay for visibility
                     time.sleep(0.5)
@@ -794,7 +805,9 @@ def main():
                     pass  # Silent fail for background computation
                 
                 if active_loop.get("converged_early"):
-                    st.success(f"✅ YOLO Mode: Converged at iteration {active_loop['convergence_iteration']}! Used {active_loop['tokens_used']:,} tokens.")
+                    final_sim = active_loop.get('final_similarity', 0.99)
+                    threshold = active_loop.get('convergence_threshold', 0.99)
+                    st.success(f"✅ YOLO Mode: Converged at iteration {active_loop['convergence_iteration']}! Final similarity: {final_sim:.3f} (threshold: {threshold:.2f}). Used {active_loop['tokens_used']:,} tokens.")
                 elif yolo_mode and len(active_loop['iterations']) >= 100:
                     st.warning(f"⚠️ YOLO Mode: Reached safety limit of 100 iterations without convergence. Used {active_loop['tokens_used']:,} tokens.")
                 else:
