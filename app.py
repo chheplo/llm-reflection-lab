@@ -865,6 +865,11 @@ def main():
             evolution_loop = st.session_state.thinking_loops[-1]
             is_evolving = False
         
+        # Show status if we have an active loop but no iterations yet
+        if evolution_loop and is_evolving and not evolution_loop.get('iterations'):
+            st.info("🔄 Starting iterations...")
+            st.caption("First iteration will appear here shortly...")
+        
         # Show convergence chart if in YOLO mode and we have similarity data
         if yolo_mode and evolution_loop and evolution_loop.get('iterations'):
             similarities = []
@@ -875,7 +880,7 @@ def main():
                     sim = iter_data.get('similarity_to_previous', 0.0)
                     similarities.append(sim)
             
-            if len(similarities) > 1:
+            if len(similarities) >= 1:  # Show chart even with one iteration
                 # Create convergence chart
                 fig = go.Figure()
                 
@@ -916,16 +921,17 @@ def main():
             show_visualization_modals(evolution_loop['iterations'])
         
         if evolution_loop and evolution_loop.get('iterations'):
+            num_iters = len(evolution_loop['iterations'])
             if is_evolving:
                 if yolo_mode:
-                    st.caption(f"🎯 YOLO Mode - Iteration {len(evolution_loop['iterations'])} (running until convergence)")
+                    st.caption(f"🎯 YOLO Mode - Iteration {num_iters} (running until convergence)")
                 else:
-                    st.caption(f"🔄 Live updates - Iteration {len(evolution_loop['iterations'])} of {num_iterations}")
+                    st.caption(f"🔄 Live updates - Iteration {num_iters} of {num_iterations}")
             else:
                 if evolution_loop.get('converged_early'):
-                    st.caption(f"✅ Converged at iteration {evolution_loop.get('convergence_iteration', len(evolution_loop['iterations']))}")
+                    st.caption(f"✅ Converged at iteration {evolution_loop.get('convergence_iteration', num_iters)}")
                 else:
-                    st.caption(f"✅ Completed {len(evolution_loop['iterations'])} iterations")
+                    st.caption(f"✅ Completed {num_iters} iterations")
             
             # Pagination controls for large iteration counts
             items_per_page = 10
@@ -1068,8 +1074,10 @@ def main():
                                             f"{curr_tokens:,}",
                                             f"{token_delta:+,}"
                                         )
-        else:
-            st.info("👋 No thinking loops yet. Start by asking a question!")
+        elif not evolution_loop or not evolution_loop.get('iterations'):
+            # Only show if there's truly nothing to display
+            if not evolution_loop:
+                st.info("👋 No thinking loops yet. Start by asking a question!")
             st.markdown("""
             ### How it works:
             1. **Ask a question** - Preferably something complex that benefits from deep thinking
