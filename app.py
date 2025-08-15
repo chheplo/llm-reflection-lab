@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -984,6 +985,67 @@ def auto_save_experiment():
         # Silent fail for auto-save
         return None
 
+def markdown_to_html(text):
+    """Convert markdown text to HTML"""
+    if not text:
+        return ""
+    
+    # Escape HTML special characters first
+    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    
+    # Convert code blocks
+    text = re.sub(r'```(\w+)?\n(.*?)\n```', r'<pre><code class="\1">\2</code></pre>', text, flags=re.DOTALL)
+    text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
+    
+    # Convert headers
+    text = re.sub(r'^### (.*?)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
+    text = re.sub(r'^## (.*?)$', r'<h2>\1</h2>', text, flags=re.MULTILINE)
+    text = re.sub(r'^# (.*?)$', r'<h1>\1</h1>', text, flags=re.MULTILINE)
+    
+    # Convert bold and italic
+    text = re.sub(r'\*\*\*(.*?)\*\*\*', r'<strong><em>\1</em></strong>', text)
+    text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
+    text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
+    text = re.sub(r'__(.*?)__', r'<strong>\1</strong>', text)
+    text = re.sub(r'_(.*?)_', r'<em>\1</em>', text)
+    
+    # Convert lists
+    lines = text.split('\n')
+    in_list = False
+    result = []
+    
+    for line in lines:
+        # Unordered lists
+        if re.match(r'^\s*[-*+]\s+', line):
+            if not in_list:
+                result.append('<ul>')
+                in_list = 'ul'
+            item = re.sub(r'^\s*[-*+]\s+', '', line)
+            result.append(f'<li>{item}</li>')
+        # Ordered lists
+        elif re.match(r'^\s*\d+\.\s+', line):
+            if not in_list:
+                result.append('<ol>')
+                in_list = 'ol'
+            item = re.sub(r'^\s*\d+\.\s+', '', line)
+            result.append(f'<li>{item}</li>')
+        else:
+            if in_list:
+                result.append(f'</{in_list}>')
+                in_list = False
+            result.append(line)
+    
+    if in_list:
+        result.append(f'</{in_list}>')
+    
+    text = '\n'.join(result)
+    
+    # Convert line breaks to paragraphs
+    paragraphs = text.split('\n\n')
+    text = ''.join([f'<p>{p}</p>' if not p.startswith('<') else p for p in paragraphs if p.strip()])
+    
+    return text
+
 def export_to_pdf():
     """Export the current experiment to a readable HTML format"""
     try:
@@ -999,7 +1061,7 @@ def export_to_pdf():
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Thinking Loop Experiment Report</title>
+    <title>LLM Reflection Lab Report</title>
     <style>
         body { 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
@@ -1067,7 +1129,24 @@ def export_to_pdf():
             white-space: pre-wrap; 
             word-wrap: break-word; 
             font-family: 'Courier New', monospace;
-            margin: 0;
+            margin: 10px 0;
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        ul, ol {
+            margin: 10px 0;
+            padding-left: 30px;
+        }
+        p {
+            margin: 10px 0;
         }
         .summary {
             background: #d5dbdb;
@@ -1078,7 +1157,7 @@ def export_to_pdf():
     </style>
 </head>
 <body>
-    <h1>🧠 Thinking Loop Experiment Report</h1>
+    <h1>🧠 LLM Reflection Lab Report</h1>
     <div class="summary">
         <p><strong>Generated:</strong> """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """</p>
         <p><strong>Total Experiments:</strong> """ + str(len(loops)) + """</p>
@@ -1098,16 +1177,19 @@ def export_to_pdf():
         """
             
             for iteration in loop.get('iterations', []):
+                reasoning_html = markdown_to_html(iteration.get('reasoning', 'No reasoning captured'))
+                response_html = markdown_to_html(iteration.get('response', iteration.get('full_response', 'No response')))
+                
                 html += f"""
         <div class="iteration">
             <h3>Iteration {iteration.get('iteration_number', 'N/A')}</h3>
             <div class="reasoning">
                 <strong>🧠 Reasoning:</strong>
-                <pre>{iteration.get('reasoning', 'No reasoning captured')}</pre>
+                <div>{reasoning_html}</div>
             </div>
             <div class="response">
                 <strong>💡 Response:</strong>
-                <pre>{iteration.get('response', iteration.get('full_response', 'No response'))}</pre>
+                <div>{response_html}</div>
             </div>
             <div class="metrics">
                 <span class="metric">Tokens: {iteration.get('usage', {}).get('total_tokens', 0):,}</span>
@@ -1127,7 +1209,7 @@ def export_to_pdf():
         
         # Create filename with timestamp
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"thinking_loop_report_{timestamp_str}.html"
+        filename = f"llm_reflection_lab_report_{timestamp_str}.html"
         
         # Offer download
         st.download_button(
