@@ -552,13 +552,13 @@ def main():
         
         # YOLO Mode toggle
         yolo_mode = st.checkbox(
-            "🎯 YOLO Mode (Auto-stop on convergence)", 
+            "🎯 YOLO Mode (Run until convergence)", 
             value=False,
-            help="Automatically stop when consecutive iterations reach 99% similarity (convergence threshold: 0.99)"
+            help="Run iterations indefinitely until consecutive iterations reach 99% similarity. Ignores iteration count."
         )
         
         if yolo_mode:
-            st.info("🎯 YOLO Mode: Will stop early if convergence is detected (similarity ≥ 0.99)")
+            st.info("🎯 YOLO Mode: Will run indefinitely until convergence is detected (similarity ≥ 0.99). Iteration slider is ignored. Safety limit: 100 iterations.")
         
         # Display token usage and performance metrics
         if st.session_state.total_tokens_used > 0:
@@ -693,10 +693,24 @@ def main():
             # Run iterations one by one with display updates
             current_iteration = len(active_loop["iterations"])
             
-            if current_iteration < num_iterations and (not active_loop.get("converged_early", False)):
+            # Determine if we should continue
+            should_continue = False
+            if yolo_mode:
+                # In YOLO mode, continue until convergence or safety limit
+                should_continue = (current_iteration < 100) and (not active_loop.get("converged_early", False))
+            else:
+                # In normal mode, respect the iteration count
+                should_continue = (current_iteration < num_iterations) and (not active_loop.get("converged_early", False))
+            
+            if should_continue:
                 # Update progress
-                progress_bar.progress((current_iteration + 1) / num_iterations)
-                status_text.text(f"🔄 Processing iteration {current_iteration + 1} of {num_iterations}...")
+                if yolo_mode:
+                    # In YOLO mode, show indeterminate progress
+                    progress_bar.progress((current_iteration + 1) % 10 / 10)  # Cycling progress
+                    status_text.text(f"🎯 YOLO Mode: Processing iteration {current_iteration + 1} (running until convergence)...")
+                else:
+                    progress_bar.progress((current_iteration + 1) / num_iterations)
+                    status_text.text(f"🔄 Processing iteration {current_iteration + 1} of {num_iterations}...")
                 
                 # Get previous reasoning and response if available
                 if active_loop["iterations"]:
@@ -718,7 +732,7 @@ def main():
                 if iteration:
                     # Check for convergence in YOLO mode
                     converged = False
-                    if yolo_mode and current_iteration > 0:  # Need at least 2 iterations to compare
+                    if yolo_mode and current_iteration >= 1:  # Need at least 2 iterations to compare (0-indexed)
                         prev_text = f"{prev_reasoning} {prev_response}"
                         curr_text = f"{iteration['reasoning']} {iteration['response']}"
                         
@@ -781,6 +795,8 @@ def main():
                 
                 if active_loop.get("converged_early"):
                     st.success(f"✅ YOLO Mode: Converged at iteration {active_loop['convergence_iteration']}! Used {active_loop['tokens_used']:,} tokens.")
+                elif yolo_mode and len(active_loop['iterations']) >= 100:
+                    st.warning(f"⚠️ YOLO Mode: Reached safety limit of 100 iterations without convergence. Used {active_loop['tokens_used']:,} tokens.")
                 else:
                     st.success(f"✅ Completed {len(active_loop['iterations'])} iterations! Used {active_loop['tokens_used']:,} tokens.")
                 time.sleep(1)
