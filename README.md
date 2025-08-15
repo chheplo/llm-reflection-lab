@@ -35,7 +35,7 @@ This project implements a **thinking loop** system where LLMs iteratively improv
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.10+
 - One of: Ollama, vLLM server, or OpenRouter API key
 
 ### Installation
@@ -82,7 +82,7 @@ The app will open at `http://localhost:8501`
 
 #### For Ollama (Local)
 - Install [Ollama](https://ollama.ai)
-- Pull a model: `ollama pull deepseek-r1:7b`
+- Pull a model: `ollama pull gpt-oss:20b`
 - Start Ollama: `ollama serve`
 - Select "Ollama (Local)" in the app
 
