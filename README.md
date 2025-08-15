@@ -20,6 +20,7 @@ This project implements a **thinking loop** system where LLMs iteratively improv
 ### Core Functionality
 - **Multi-Model Support**: Works with Ollama, vLLM, and OpenRouter APIs
 - **Reasoning Extraction**: Captures explicit reasoning from `<think>` tags or native fields
+- **🎯 YOLO Mode**: Run iterations until convergence is detected automatically
 - **Customizable Prompts**: Edit system prompts and reflection templates via UI
 - **Auto-Save**: Experiments saved automatically in JSON format
 - **Export**: Generate HTML reports of complete experiments
@@ -75,6 +76,15 @@ uv run streamlit run app.py
 streamlit run app.py
 ```
 
+#### Alternative: Run with minimal UI and headless mode
+```bash
+# With uv (minimal toolbar, headless server, no usage stats)
+uv run streamlit run app.py --client.toolbarMode=minimal --server.headless true --browser.gatherUsageStats false
+
+# With pip
+streamlit run app.py --client.toolbarMode=minimal --server.headless true --browser.gatherUsageStats false
+```
+
 The app will open at `http://localhost:8501`
 
 ## 🎮 Usage
@@ -101,9 +111,13 @@ The app will open at `http://localhost:8501`
 
 1. **Enter a Question**: Complex questions work best
 2. **Set Iterations**: Choose 3-10 iterations (or more!)
-3. **Start Loop**: Click to begin the thinking process
-4. **Watch Evolution**: See reasoning improve in real-time
-5. **Explore Visualizations**: Click visualization buttons for insights
+3. **Optional - Enable YOLO Mode**: 
+   - Toggle "🎯 YOLO Mode" to run until convergence
+   - Adjust convergence threshold (0.80-0.99)
+   - Iterations continue until consecutive responses are similar enough
+4. **Start Loop**: Click to begin the thinking process
+5. **Watch Evolution**: See reasoning improve in real-time
+6. **Explore Visualizations**: Click visualization buttons for insights
 
 ### 3. Customize Prompts
 
@@ -133,7 +147,7 @@ llm-reflection-lab/
 1. **Initial Response**: Model answers the question
 2. **Self-Reflection**: Model reviews its previous answer
 3. **Improvement**: Model provides refined response
-4. **Repeat**: Process continues for N iterations
+4. **Repeat**: Process continues for N iterations (or until convergence in YOLO Mode)
 
 ### Reasoning Extraction
 
@@ -148,6 +162,15 @@ Through visualizations, you can observe:
 - **Convergence**: Ideas stabilizing (high similarity)
 - **Divergence**: Exploring new concepts (low similarity)
 - **Phase Transitions**: Shifts between exploration/exploitation
+
+### YOLO Mode (You Only Loop Once... Until Convergence)
+
+When enabled, YOLO Mode:
+- **Automatic Stopping**: Detects when consecutive iterations reach similarity threshold
+- **Dynamic Duration**: Runs as many iterations as needed (up to 100 for safety)
+- **Real-time Monitoring**: Shows convergence progress chart during execution
+- **Efficiency**: Stops early when the model's responses stabilize
+- **Configurable Threshold**: Adjust sensitivity from 80% to 99% similarity
 
 ## 📊 Example Insights
 
