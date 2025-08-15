@@ -14,7 +14,7 @@ This project implements a **thinking loop** system where LLMs iteratively improv
 - 🎯 **Identify** gaps and assumptions  
 - 📈 **Refine** their answers progressively
 - 🧩 **Explore** different reasoning paths
-
+<img width="1652" height="843" alt="Screenshot 2025-08-15 at 10 49 42 AM" src="https://github.com/user-attachments/assets/2f62a3a7-845c-482b-84c8-89c49a041d25" />
 ## ✨ Features
 
 ### Core Functionality
@@ -31,6 +31,7 @@ This project implements a **thinking loop** system where LLMs iteratively improv
 - **📊 Complexity Metrics**: Vocabulary diversity and logical connector usage
 - **🌊 Topic Flow Sankey**: How topics persist or change between iterations
 - **↔️ Convergence Timeline**: Tracks exploration vs exploitation phases
+<img width="740" height="742" alt="Screenshot 2025-08-15 at 10 51 21 AM" src="https://github.com/user-attachments/assets/0239ef23-83aa-430c-afe6-fcfb93e75124" />
 
 ## 🚀 Quick Start
 
