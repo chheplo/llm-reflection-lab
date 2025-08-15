@@ -9,6 +9,9 @@ from typing import Dict, List, Optional
 import requests
 import streamlit as st
 from openai import OpenAI
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Import visualization module
 from src.visualizations import (
@@ -194,11 +197,20 @@ class ThinkingLoop:
         
         return None
     
-    def run_loop(self, question: str, num_iterations: int, progress_callback=None) -> List[Dict]:
-        """Run the complete thinking loop for specified iterations"""
+    def run_loop(self, question: str, num_iterations: int, progress_callback=None, yolo_mode: bool = False, convergence_threshold: float = 0.99) -> List[Dict]:
+        """Run the complete thinking loop for specified iterations
+        
+        Args:
+            question: The question to answer
+            num_iterations: Maximum number of iterations
+            progress_callback: Optional callback for progress updates
+            yolo_mode: If True, stop early when convergence is detected
+            convergence_threshold: Similarity threshold for convergence (default 0.99)
+        """
         self.iterations = []
         reasoning = ""
         response = ""
+        converged = False
         
         for i in range(num_iterations):
             if progress_callback:
@@ -209,12 +221,28 @@ class ThinkingLoop:
             if iteration:
                 reasoning = iteration["reasoning"]
                 response = iteration["response"]
+                
+                # Check for convergence in YOLO mode
+                if yolo_mode and i > 0:  # Need at least 2 iterations to compare
+                    prev_text = f"{self.iterations[-1]['reasoning']} {self.iterations[-1]['response']}"
+                    curr_text = f"{iteration['reasoning']} {iteration['response']}"
+                    
+                    similarity = calculate_similarity(prev_text, curr_text)
+                    iteration['similarity_to_previous'] = similarity
+                    
+                    if similarity >= convergence_threshold:
+                        converged = True
+                        st.success(f"🎯 YOLO Mode: Convergence detected at iteration {i + 1} (similarity: {similarity:.3f})")
+                        break
             else:
                 st.error(f"Failed at iteration {i + 1}")
                 break
             
             # Small delay to avoid rate limiting
             time.sleep(1)
+        
+        if yolo_mode and not converged and len(self.iterations) == num_iterations:
+            st.info(f"🎯 YOLO Mode: Completed all {num_iterations} iterations without convergence")
         
         return self.iterations
 
@@ -522,6 +550,16 @@ def main():
             help="Number of thinking iterations to refine the response"
         )
         
+        # YOLO Mode toggle
+        yolo_mode = st.checkbox(
+            "🎯 YOLO Mode (Auto-stop on convergence)", 
+            value=False,
+            help="Automatically stop when consecutive iterations reach 99% similarity (convergence threshold: 0.99)"
+        )
+        
+        if yolo_mode:
+            st.info("🎯 YOLO Mode: Will stop early if convergence is detected (similarity ≥ 0.99)")
+        
         # Display token usage and performance metrics
         if st.session_state.total_tokens_used > 0:
             st.subheader("📊 Performance Metrics")
@@ -655,7 +693,7 @@ def main():
             # Run iterations one by one with display updates
             current_iteration = len(active_loop["iterations"])
             
-            if current_iteration < num_iterations:
+            if current_iteration < num_iterations and (not active_loop.get("converged_early", False)):
                 # Update progress
                 progress_bar.progress((current_iteration + 1) / num_iterations)
                 status_text.text(f"🔄 Processing iteration {current_iteration + 1} of {num_iterations}...")
@@ -678,6 +716,19 @@ def main():
                 )
                 
                 if iteration:
+                    # Check for convergence in YOLO mode
+                    converged = False
+                    if yolo_mode and current_iteration > 0:  # Need at least 2 iterations to compare
+                        prev_text = f"{prev_reasoning} {prev_response}"
+                        curr_text = f"{iteration['reasoning']} {iteration['response']}"
+                        
+                        similarity = calculate_similarity(prev_text, curr_text)
+                        iteration['similarity_to_previous'] = similarity
+                        
+                        if similarity >= 0.99:  # Convergence threshold
+                            converged = True
+                            st.success(f"🎯 YOLO Mode: Convergence detected at iteration {current_iteration + 1} (similarity: {similarity:.3f})")
+                    
                     # Add iteration to active loop
                     active_loop["iterations"].append(iteration)
                     if iteration.get("usage"):
@@ -693,6 +744,12 @@ def main():
                     
                     # Update session state
                     st.session_state.active_loop = active_loop
+                    
+                    # If converged in YOLO mode, mark as complete
+                    if converged:
+                        active_loop["is_running"] = False
+                        active_loop["converged_early"] = True
+                        active_loop["convergence_iteration"] = current_iteration + 1
                     
                     # Small delay for visibility
                     time.sleep(0.5)
@@ -722,7 +779,10 @@ def main():
                 except Exception:
                     pass  # Silent fail for background computation
                 
-                st.success(f"✅ Completed {len(active_loop['iterations'])} iterations! Used {active_loop['tokens_used']:,} tokens.")
+                if active_loop.get("converged_early"):
+                    st.success(f"✅ YOLO Mode: Converged at iteration {active_loop['convergence_iteration']}! Used {active_loop['tokens_used']:,} tokens.")
+                else:
+                    st.success(f"✅ Completed {len(active_loop['iterations'])} iterations! Used {active_loop['tokens_used']:,} tokens.")
                 time.sleep(1)
                 st.rerun()
         
@@ -836,10 +896,14 @@ def main():
                     # Start with all iterations collapsed (no auto-expand)
                     
                     # Create expander for each iteration with click handler
+                    similarity_text = ""
+                    if iteration.get('similarity_to_previous') is not None:
+                        similarity_text = f" | Similarity: {iteration['similarity_to_previous']:.3f}"
+                    
                     if st.button(
                         f"🔄 Iteration {iteration['iteration_number']} "
                         f"{'(Latest)' if actual_idx == len(evolution_loop['iterations']) - 1 else ''} "
-                        f"- {iteration.get('usage', {}).get('total_tokens', 0):,} tokens",
+                        f"- {iteration.get('usage', {}).get('total_tokens', 0):,} tokens{similarity_text}",
                         key=f"btn_{iteration_key}",
                         use_container_width=True
                     ):
@@ -984,6 +1048,21 @@ def auto_save_experiment():
     except Exception:
         # Silent fail for auto-save
         return None
+
+def calculate_similarity(text1: str, text2: str) -> float:
+    """Calculate similarity between two texts using TF-IDF and cosine similarity"""
+    if not text1 or not text2:
+        return 0.0
+    
+    try:
+        # Use TF-IDF for text vectorization
+        vectorizer = TfidfVectorizer(max_features=100, stop_words='english')
+        tfidf_matrix = vectorizer.fit_transform([text1, text2])
+        similarity_matrix = cosine_similarity(tfidf_matrix)
+        return float(similarity_matrix[0][1])
+    except:
+        # Fallback for edge cases
+        return 1.0 if text1 == text2 else 0.0
 
 def markdown_to_html(text):
     """Convert markdown text to HTML"""
