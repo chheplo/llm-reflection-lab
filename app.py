@@ -858,9 +858,15 @@ def main():
         
         # Determine which loop to display (active or latest completed)
         evolution_loop = None
+        is_evolving = False
+        
+        # Check for active loop first
         if "active_loop" in st.session_state and st.session_state.active_loop:
             evolution_loop = st.session_state.active_loop
-            is_evolving = True
+            is_evolving = st.session_state.active_loop.get("is_running", False)
+            # Debug info
+            if st.session_state.get("debug_mode", False):
+                st.sidebar.write(f"Active loop found: {len(evolution_loop.get('iterations', []))} iterations")
         elif st.session_state.thinking_loops:
             evolution_loop = st.session_state.thinking_loops[-1]
             is_evolving = False
@@ -869,6 +875,21 @@ def main():
         if evolution_loop and is_evolving and not evolution_loop.get('iterations'):
             st.info("🔄 Starting iterations...")
             st.caption("First iteration will appear here shortly...")
+        
+        # Always show iterations if they exist, regardless of is_evolving state
+        if evolution_loop and evolution_loop.get('iterations'):
+            # Show status caption
+            num_iters = len(evolution_loop['iterations'])
+            if is_evolving:
+                if yolo_mode:
+                    st.caption(f"🎯 YOLO Mode - Iteration {num_iters} (running until convergence)")
+                else:
+                    st.caption(f"🔄 Live updates - Iteration {num_iters} of {num_iterations}")
+            else:
+                if evolution_loop.get('converged_early'):
+                    st.caption(f"✅ Converged at iteration {evolution_loop.get('convergence_iteration', num_iters)}")
+                else:
+                    st.caption(f"✅ Completed {num_iters} iterations")
         
         # Show convergence chart if in YOLO mode and we have similarity data
         if yolo_mode and evolution_loop and evolution_loop.get('iterations'):
@@ -919,19 +940,10 @@ def main():
         if evolution_loop and evolution_loop.get('iterations'):
             show_visualization_buttons(evolution_loop['iterations'])
             show_visualization_modals(evolution_loop['iterations'])
-        
-        if evolution_loop and evolution_loop.get('iterations'):
-            num_iters = len(evolution_loop['iterations'])
-            if is_evolving:
-                if yolo_mode:
-                    st.caption(f"🎯 YOLO Mode - Iteration {num_iters} (running until convergence)")
-                else:
-                    st.caption(f"🔄 Live updates - Iteration {num_iters} of {num_iterations}")
-            else:
-                if evolution_loop.get('converged_early'):
-                    st.caption(f"✅ Converged at iteration {evolution_loop.get('convergence_iteration', num_iters)}")
-                else:
-                    st.caption(f"✅ Completed {num_iters} iterations")
+            
+            # Display iterations section
+            st.divider()
+            st.subheader("Iterations")
             
             # Pagination controls for large iteration counts
             items_per_page = 10
