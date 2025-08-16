@@ -166,7 +166,7 @@ def clean_text_for_pdf(text: str) -> str:
 
 
 def format_markdown_for_pdf(text: str, styles) -> List[Paragraph]:
-    """Convert markdown-like text to ReportLab Paragraph objects"""
+    """Convert markdown-like text to ReportLab Paragraph objects with proper formatting"""
     if not text:
         return [Paragraph("No content", styles['Normal'])]
     
@@ -177,49 +177,71 @@ def format_markdown_for_pdf(text: str, styles) -> List[Paragraph]:
     lines = text.split('\n')
     current_para = []
     in_code_block = False
+    code_block_content = []
     
     for line in lines:
         # Handle code blocks
         if line.strip().startswith('```'):
-            if current_para:
-                para_text = ' '.join(current_para)
-                if in_code_block:
-                    paragraphs.append(Paragraph(f'<pre>{para_text}</pre>', styles.get('CodeStyle', styles['Normal'])))
-                else:
+            if in_code_block:
+                # End code block
+                if code_block_content:
+                    code_text = '<br/>'.join(code_block_content)
+                    paragraphs.append(Paragraph(
+                        f'<font face="Courier" size="9" color="#333333">{code_text}</font>',
+                        styles.get('CodeStyle', styles['Normal'])
+                    ))
+                    code_block_content = []
+                in_code_block = False
+            else:
+                # Start code block - first flush current paragraph
+                if current_para:
+                    para_text = '<br/>'.join(current_para)
                     paragraphs.append(Paragraph(para_text, styles['Normal']))
-                current_para = []
-            in_code_block = not in_code_block
+                    current_para = []
+                in_code_block = True
             continue
         
-        # Handle headers
+        if in_code_block:
+            # Escape HTML characters in code
+            line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            code_block_content.append(line)
+            continue
+        
+        # Handle headers with proper styling
         if line.startswith('### '):
             if current_para:
-                paragraphs.append(Paragraph(' '.join(current_para), styles['Normal']))
+                para_text = '<br/>'.join(current_para)
+                paragraphs.append(Paragraph(para_text, styles['Normal']))
                 current_para = []
-            if 'Heading3' in styles:
-                paragraphs.append(Paragraph(line[4:], styles['Heading3']))
-            else:
-                paragraphs.append(Paragraph(line[4:], styles['Heading2']))
+            header_text = f'<b><font size="12">{line[4:]}</font></b>'
+            paragraphs.append(Paragraph(header_text, styles.get('Heading3', styles['Heading2'])))
             continue
         elif line.startswith('## '):
             if current_para:
-                paragraphs.append(Paragraph(' '.join(current_para), styles['Normal']))
+                para_text = '<br/>'.join(current_para)
+                paragraphs.append(Paragraph(para_text, styles['Normal']))
                 current_para = []
-            paragraphs.append(Paragraph(line[3:], styles['Heading2']))
+            header_text = f'<b><font size="14">{line[3:]}</font></b>'
+            paragraphs.append(Paragraph(header_text, styles['Heading2']))
             continue
         elif line.startswith('# '):
             if current_para:
-                paragraphs.append(Paragraph(' '.join(current_para), styles['Normal']))
+                para_text = '<br/>'.join(current_para)
+                paragraphs.append(Paragraph(para_text, styles['Normal']))
                 current_para = []
-            paragraphs.append(Paragraph(line[2:], styles['Heading1']))
+            header_text = f'<b><font size="16">{line[2:]}</font></b>'
+            paragraphs.append(Paragraph(header_text, styles['Heading1']))
             continue
         
-        # Handle lists
+        # Handle lists with proper bullets
         if line.strip().startswith('- ') or line.strip().startswith('* '):
             if current_para:
-                paragraphs.append(Paragraph(' '.join(current_para), styles['Normal']))
+                para_text = '<br/>'.join(current_para)
+                paragraphs.append(Paragraph(para_text, styles['Normal']))
                 current_para = []
             list_text = line.strip()[2:] if len(line.strip()) > 2 else ''
+            # Process inline formatting in list items
+            list_text = process_inline_markdown(list_text)
             paragraphs.append(Paragraph(f"• {list_text}", styles.get('BulletStyle', styles['Normal'])))
             continue
         
@@ -227,57 +249,96 @@ def format_markdown_for_pdf(text: str, styles) -> List[Paragraph]:
         import re
         if re.match(r'^\d+\.\s', line.strip()):
             if current_para:
-                paragraphs.append(Paragraph(' '.join(current_para), styles['Normal']))
+                para_text = '<br/>'.join(current_para)
+                paragraphs.append(Paragraph(para_text, styles['Normal']))
                 current_para = []
-            paragraphs.append(Paragraph(line.strip(), styles.get('BulletStyle', styles['Normal'])))
+            # Process inline formatting in list items
+            list_text = process_inline_markdown(line.strip())
+            paragraphs.append(Paragraph(list_text, styles.get('BulletStyle', styles['Normal'])))
+            continue
+        
+        # Handle blockquotes
+        if line.strip().startswith('>'):
+            if current_para:
+                para_text = '<br/>'.join(current_para)
+                paragraphs.append(Paragraph(para_text, styles['Normal']))
+                current_para = []
+            quote_text = line.strip()[1:].strip()
+            quote_text = process_inline_markdown(quote_text)
+            paragraphs.append(Paragraph(
+                f'<i><font color="#666666">{quote_text}</font></i>',
+                styles['Normal']
+            ))
             continue
         
         # Regular text
         if line.strip():
-            # Apply inline formatting safely
-            try:
-                # Count occurrences to ensure proper pairing
-                bold_count = line.count('**')
-                if bold_count >= 2:
-                    line = line.replace('**', '<b>', 1).replace('**', '</b>', 1)
-                
-                italic_count = line.count('*')
-                if italic_count >= 2:
-                    line = line.replace('*', '<i>', 1).replace('*', '</i>', 1)
-                
-                code_count = line.count('`')
-                if code_count >= 2:
-                    line = line.replace('`', '<font face="Courier">', 1).replace('`', '</font>', 1)
-            except:
-                pass  # If formatting fails, use plain text
-            
-            current_para.append(line)
+            # Apply inline formatting
+            formatted_line = process_inline_markdown(line)
+            current_para.append(formatted_line)
         elif current_para:
             # Empty line indicates paragraph break
-            para_text = ' '.join(current_para)
-            if in_code_block:
-                paragraphs.append(Paragraph(f'<pre>{para_text}</pre>', styles.get('CodeStyle', styles['Normal'])))
-            else:
-                paragraphs.append(Paragraph(para_text, styles['Normal']))
+            para_text = '<br/>'.join(current_para)
+            paragraphs.append(Paragraph(para_text, styles['Normal']))
             current_para = []
     
-    # Don't forget the last paragraph
-    if current_para:
-        para_text = ' '.join(current_para)
-        if in_code_block:
-            paragraphs.append(Paragraph(f'<pre>{para_text}</pre>', styles.get('CodeStyle', styles['Normal'])))
-        else:
-            paragraphs.append(Paragraph(para_text, styles['Normal']))
+    # Don't forget the last paragraph or code block
+    if in_code_block and code_block_content:
+        code_text = '<br/>'.join(code_block_content)
+        paragraphs.append(Paragraph(
+            f'<font face="Courier" size="9" color="#333333">{code_text}</font>',
+            styles.get('CodeStyle', styles['Normal'])
+        ))
+    elif current_para:
+        para_text = '<br/>'.join(current_para)
+        paragraphs.append(Paragraph(para_text, styles['Normal']))
     
     return paragraphs if paragraphs else [Paragraph("No content", styles['Normal'])]
 
 
+def process_inline_markdown(text: str) -> str:
+    """Process inline markdown formatting (bold, italic, code)"""
+    import re
+    
+    # Escape existing HTML
+    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    
+    # Bold text: **text** or __text__
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
+    
+    # Italic text: *text* or _text_ (but not if part of bold)
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', text)
+    text = re.sub(r'(?<!_)_(?!_)(.+?)(?<!_)_(?!_)', r'<i>\1</i>', text)
+    
+    # Inline code: `code`
+    text = re.sub(r'`(.+?)`', r'<font face="Courier" color="#666666">\1</font>', text)
+    
+    # Links: [text](url) - just show the text
+    text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
+    
+    return text
+
+
 def create_visualization_charts(iterations: List[Dict], similarity_mode: str = "response_only") -> Dict:
-    """Create visualization charts for the PDF report"""
+    """Create all visualization charts for the PDF report"""
     charts = {}
     
+    # Import visualization functions from src.visualizations
     try:
-        # Token usage over time chart
+        from src.visualizations import (
+            create_similarity_heatmap,
+            create_confidence_tracking,
+            create_topic_flow_sankey,
+            create_divergence_convergence_timeline,
+            create_complexity_metrics
+        )
+    except ImportError:
+        # Fallback to basic charts if imports fail
+        pass
+    
+    try:
+        # 1. Token usage over time chart
         if iterations:
             token_counts = [iter.get('usage', {}).get('total_tokens', 0) for iter in iterations]
             iteration_nums = list(range(1, len(iterations) + 1))
@@ -288,7 +349,7 @@ def create_visualization_charts(iterations: List[Dict], similarity_mode: str = "
                 y=token_counts,
                 mode='lines+markers',
                 name='Tokens Used',
-                line=dict(color='blue', width=2),
+                line=dict(color='#3498db', width=2),
                 marker=dict(size=8)
             ))
             fig_tokens.update_layout(
@@ -296,11 +357,13 @@ def create_visualization_charts(iterations: List[Dict], similarity_mode: str = "
                 xaxis_title="Iteration",
                 yaxis_title="Tokens",
                 height=400,
-                showlegend=False
+                showlegend=False,
+                plot_bgcolor='white',
+                paper_bgcolor='white'
             )
             charts['token_usage'] = fig_tokens
             
-            # Response length evolution
+            # 2. Response and reasoning length evolution
             response_lengths = []
             reasoning_lengths = []
             for iter in iterations:
@@ -315,25 +378,27 @@ def create_visualization_charts(iterations: List[Dict], similarity_mode: str = "
                 y=response_lengths,
                 mode='lines+markers',
                 name='Response Length',
-                line=dict(color='green', width=2)
+                line=dict(color='#27ae60', width=2)
             ))
             fig_lengths.add_trace(go.Scatter(
                 x=iteration_nums,
                 y=reasoning_lengths,
                 mode='lines+markers',
                 name='Reasoning Length',
-                line=dict(color='orange', width=2)
+                line=dict(color='#e67e22', width=2)
             ))
             fig_lengths.update_layout(
                 title="Content Length Evolution",
                 xaxis_title="Iteration",
                 yaxis_title="Character Count",
                 height=400,
-                showlegend=True
+                showlegend=True,
+                plot_bgcolor='white',
+                paper_bgcolor='white'
             )
             charts['length_evolution'] = fig_lengths
             
-            # Similarity convergence chart (if similarity data exists)
+            # 3. Similarity convergence chart
             similarities = []
             for i, iter_data in enumerate(iterations):
                 if i == 0:
@@ -350,18 +415,90 @@ def create_visualization_charts(iterations: List[Dict], similarity_mode: str = "
                     y=similarities,
                     mode='lines+markers',
                     name='Similarity',
-                    line=dict(color='purple', width=2),
-                    marker=dict(size=8)
+                    line=dict(color='#8e44ad', width=2),
+                    marker=dict(size=8),
+                    fill='tozeroy',
+                    fillcolor='rgba(142, 68, 173, 0.1)'
                 ))
+                # Add convergence threshold line
+                fig_similarity.add_hline(
+                    y=0.99, 
+                    line_dash="dash", 
+                    line_color="red",
+                    annotation_text="Convergence Threshold"
+                )
                 fig_similarity.update_layout(
                     title=f"Similarity Convergence ({similarity_mode.replace('_', ' ').title()})",
                     xaxis_title="Iteration",
                     yaxis_title="Similarity Score",
                     yaxis=dict(range=[0, 1.05]),
                     height=400,
-                    showlegend=False
+                    showlegend=False,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
                 )
-                charts['similarity'] = fig_similarity
+                charts['similarity_convergence'] = fig_similarity
+            
+            # 4. Similarity Heatmap (from visualizations module)
+            try:
+                fig_heatmap = create_similarity_heatmap(iterations)
+                fig_heatmap.update_layout(
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                charts['similarity_heatmap'] = fig_heatmap
+            except Exception:
+                pass
+            
+            # 5. Confidence Tracking
+            try:
+                fig_confidence = create_confidence_tracking(iterations)
+                fig_confidence.update_layout(
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                charts['confidence'] = fig_confidence
+            except Exception:
+                pass
+            
+            # 6. Complexity Metrics
+            try:
+                fig_complexity = create_complexity_metrics(iterations)
+                fig_complexity.update_layout(
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                charts['complexity'] = fig_complexity
+            except Exception:
+                pass
+            
+            # 7. Topic Flow Sankey
+            try:
+                if len(iterations) >= 2:
+                    fig_topic = create_topic_flow_sankey(iterations)
+                    fig_topic.update_layout(
+                        height=400,
+                        plot_bgcolor='white',
+                        paper_bgcolor='white'
+                    )
+                    charts['topic_flow'] = fig_topic
+            except Exception:
+                pass
+            
+            # 8. Divergence-Convergence Timeline
+            try:
+                fig_divergence = create_divergence_convergence_timeline(iterations)
+                fig_divergence.update_layout(
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                charts['divergence'] = fig_divergence
+            except Exception:
+                pass
                 
     except Exception as e:
         print(f"Error creating charts: {e}")
@@ -649,7 +786,7 @@ def create_pdf_report(thinking_loops: List[Dict], visualizations: Optional[Dict]
     
     # Add visualizations section
     story.append(PageBreak())
-    story.append(Paragraph("Visualizations & Analytics", styles['SectionTitle']))
+    story.append(Paragraph("📊 Visualizations & Analytics", styles['SectionTitle']))
     story.append(Spacer(1, 0.2*inch))
     
     # Generate charts for all experiments combined
@@ -661,35 +798,113 @@ def create_pdf_report(thinking_loops: List[Dict], visualizations: Optional[Dict]
     if all_iterations and len(all_iterations) > 0:
         charts = create_visualization_charts(all_iterations, similarity_mode)
         
-        # Add each chart to the story
+        # Page 1: Basic Metrics
+        story.append(Paragraph("<b>Performance Metrics</b>", styles['Heading2']))
+        story.append(Spacer(1, 0.1*inch))
+        
+        # Add token usage and length evolution side by side
+        chart_table_data = []
+        row_charts = []
+        
         if 'token_usage' in charts:
-            story.append(Paragraph("Token Usage Analysis", styles['Heading3']))
-            story.append(ChartFlowable(charts['token_usage'], width=6*inch, height=3*inch))
-            story.append(Spacer(1, 0.2*inch))
+            row_charts.append(ChartFlowable(charts['token_usage'], width=3.5*inch, height=2.5*inch))
         
         if 'length_evolution' in charts:
-            story.append(Paragraph("Content Length Evolution", styles['Heading3']))
-            story.append(ChartFlowable(charts['length_evolution'], width=6*inch, height=3*inch))
+            row_charts.append(ChartFlowable(charts['length_evolution'], width=3.5*inch, height=2.5*inch))
+        
+        if row_charts:
+            if len(row_charts) == 1:
+                story.append(row_charts[0])
+            else:
+                chart_table_data.append(row_charts)
+                chart_table = Table(chart_table_data)
+                story.append(chart_table)
             story.append(Spacer(1, 0.2*inch))
         
-        if 'similarity' in charts:
-            story.append(Paragraph("Convergence Analysis", styles['Heading3']))
-            story.append(ChartFlowable(charts['similarity'], width=6*inch, height=3*inch))
+        # Page 2: Convergence Analysis
+        story.append(Paragraph("<b>Convergence Analysis</b>", styles['Heading2']))
+        story.append(Spacer(1, 0.1*inch))
+        
+        row_charts = []
+        if 'similarity_convergence' in charts:
+            row_charts.append(ChartFlowable(charts['similarity_convergence'], width=3.5*inch, height=2.5*inch))
+        
+        if 'divergence' in charts:
+            row_charts.append(ChartFlowable(charts['divergence'], width=3.5*inch, height=2.5*inch))
+        
+        if row_charts:
+            if len(row_charts) == 1:
+                story.append(row_charts[0])
+            else:
+                chart_table_data = [row_charts]
+                chart_table = Table(chart_table_data)
+                story.append(chart_table)
             story.append(Spacer(1, 0.2*inch))
         
-        # Add individual experiment charts if multiple experiments
+        # Similarity Heatmap (full width)
+        if 'similarity_heatmap' in charts:
+            story.append(Paragraph("<b>Iteration Similarity Matrix</b>", styles['Heading3']))
+            story.append(ChartFlowable(charts['similarity_heatmap'], width=6*inch, height=4*inch))
+            story.append(Spacer(1, 0.2*inch))
+        
+        # Page 3: Content Analysis
+        story.append(PageBreak())
+        story.append(Paragraph("<b>Content Analysis</b>", styles['Heading2']))
+        story.append(Spacer(1, 0.1*inch))
+        
+        row_charts = []
+        if 'confidence' in charts:
+            row_charts.append(ChartFlowable(charts['confidence'], width=3.5*inch, height=2.5*inch))
+        
+        if 'complexity' in charts:
+            row_charts.append(ChartFlowable(charts['complexity'], width=3.5*inch, height=2.5*inch))
+        
+        if row_charts:
+            if len(row_charts) == 1:
+                story.append(row_charts[0])
+            else:
+                chart_table_data = [row_charts]
+                chart_table = Table(chart_table_data)
+                story.append(chart_table)
+            story.append(Spacer(1, 0.2*inch))
+        
+        # Topic Flow (full width)
+        if 'topic_flow' in charts:
+            story.append(Paragraph("<b>Topic Flow Analysis</b>", styles['Heading3']))
+            story.append(ChartFlowable(charts['topic_flow'], width=6*inch, height=4*inch))
+            story.append(Spacer(1, 0.2*inch))
+        
+        # Add per-experiment analysis if multiple experiments
         if len(thinking_loops) > 1:
             story.append(PageBreak())
             story.append(Paragraph("Per-Experiment Analysis", styles['Heading2']))
             
             for exp_num, loop in enumerate(thinking_loops, 1):
                 if loop.get('iterations'):
-                    story.append(Paragraph(f"Experiment {exp_num}", styles['Heading3']))
+                    story.append(Paragraph(f"<b>Experiment {exp_num}:</b> {clean_text_for_pdf(loop.get('question', 'N/A')[:50])}", styles['Heading3']))
                     exp_charts = create_visualization_charts(loop['iterations'], similarity_mode)
                     
-                    if 'token_usage' in exp_charts:
-                        story.append(ChartFlowable(exp_charts['token_usage'], width=5*inch, height=2.5*inch))
-                        story.append(Spacer(1, 0.1*inch))
+                    # Create a compact view with 2x2 grid
+                    chart_grid = []
+                    row = []
+                    
+                    for chart_key in ['token_usage', 'similarity_convergence', 'confidence', 'complexity']:
+                        if chart_key in exp_charts:
+                            row.append(ChartFlowable(exp_charts[chart_key], width=3*inch, height=2*inch))
+                            if len(row) == 2:
+                                chart_grid.append(row)
+                                row = []
+                    
+                    # Add remaining charts
+                    if row:
+                        while len(row) < 2:
+                            row.append(Spacer(3*inch, 2*inch))
+                        chart_grid.append(row)
+                    
+                    if chart_grid:
+                        chart_table = Table(chart_grid)
+                        story.append(chart_table)
+                        story.append(Spacer(1, 0.2*inch))
     
     story.append(PageBreak())
     
