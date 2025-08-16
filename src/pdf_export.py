@@ -1049,4 +1049,8 @@ def export_to_pdf(thinking_loops: List[Dict], visualizations: Optional[Dict] = N
         # If filename generation fails, use default
         pass
     
+    # Ensure filename has .pdf extension
+    if not filename.endswith('.pdf'):
+        filename = filename + '.pdf'
+    
     return pdf_bytes, filename
