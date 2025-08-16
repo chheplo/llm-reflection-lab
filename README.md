@@ -22,13 +22,16 @@ This project implements a **thinking loop** system where LLMs iteratively improv
 - **Reasoning Extraction**: Captures explicit reasoning from `<think>` tags or native fields
 - **🎯 YOLO Mode**: Run iterations until convergence is detected automatically
   - Configurable convergence threshold (80-99%)
-  - Choose similarity comparison mode: "Reasoning + Response" or "Response Only"
+  - Choose similarity comparison mode: "Response Only" (default) or "Reasoning + Response"
 - **📚 Prompt Templates**: Pre-configured epistemic approaches
   - Socratic Method, Empirical-Scientific, Dialectical Synthesis, Systems Thinking, and more
   - Easy template switching via dropdown in prompt editor
 - **Customizable Prompts**: Edit system prompts and reflection templates via UI
 - **Auto-Save**: Experiments saved automatically in JSON format
-- **Export**: Generate HTML reports of complete experiments
+- **📄 Export Options**: 
+  - **PDF Reports**: Professional reports with visualizations, charts, and complete appendix
+  - **HTML Reports**: Interactive web-based reports
+  - **Smart Filenames**: AI-generated descriptive filenames based on question content
 
 ### 📊 Interactive Visualizations
 - **🕸️ Concept Evolution Graph**: Network showing how concepts emerge and connect
@@ -137,13 +140,27 @@ Click "✏️ Prompts" to:
 - **Edit Prompts**: Customize system and reflection prompts
 - **Save Changes**: Store your customizations
 
+### 4. Export Results
+
+Click "📤 Export" to generate reports:
+- **PDF Report**: Professional document with:
+  - Colorful title page with research question
+  - Executive summary and key findings
+  - Visualization charts (token usage, convergence analysis)
+  - Detailed experiment results
+  - Complete appendix with all iterations
+  - Smart AI-generated filename based on question
+- **HTML Report**: Web-based interactive report
+
 ## 📁 Project Structure
 
 ```
 llm-reflection-lab/
 ├── app.py                 # Main Streamlit application
 ├── src/
-│   └── visualizations.py  # Visualization modules
+│   ├── visualizations.py  # Visualization modules
+│   ├── pdf_export.py      # PDF report generation
+│   └── prompts.json       # Current active prompts (user customized)
 ├── templates/            # Prompt template library
 │   ├── default.json      # Standard reasoning template
 │   ├── socratic-method.json
@@ -151,7 +168,6 @@ llm-reflection-lab/
 │   ├── dialectical-synthesis.json
 │   ├── systems-thinking.json
 │   └── iterative-refinement.json
-├── prompts.json          # Current active prompts (user customized)
 ├── saves/                # Auto-saved experiments
 ├── pyproject.toml        # Project dependencies (uv)
 ├── requirements.txt      # Project dependencies (pip)

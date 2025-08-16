@@ -73,3 +73,6 @@ tzdata==2025.2
 urllib3==2.5.0
 watchdog==6.0.0
 wcwidth==0.2.13
+# PDF export dependencies
+reportlab==4.4.3
+kaleido==1.0.0

@@ -13,6 +13,8 @@ dependencies = [
     "networkx>=3.4.2",
     "numpy>=2.2.6",
     "scikit-learn>=1.7.1",
+    "reportlab>=4.4.3",
+    "kaleido>=1.0.0",
 ]
 
 [project.optional-dependencies]
