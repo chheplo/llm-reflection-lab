@@ -703,22 +703,21 @@ def create_pdf_report(thinking_loops: List[Dict], visualizations: Optional[Dict]
         # Find convergence statistics if YOLO mode was used
         converged_experiments = [loop for loop in thinking_loops if loop.get('converged_early', False)]
         
-        summary_text = f"""
-        This report analyzes {len(thinking_loops)} experiment{'s' if len(thinking_loops) > 1 else ''} 
-        conducted using the LLM Reflection Lab, with a total of {total_iterations} iterations performed.
-        The experiments utilized {total_tokens:,} tokens over {total_time:.2f} seconds of processing time.
-        """
+        summary_text = (
+            f"This report analyzes {len(thinking_loops)} experiment{'s' if len(thinking_loops) > 1 else ''} "
+            f"conducted using the LLM Reflection Lab, with a total of {total_iterations} iterations performed. "
+            f"The experiments utilized {total_tokens:,} tokens over {total_time:.2f} seconds of processing time."
+        )
         
         if converged_experiments:
             avg_convergence = sum(loop.get('convergence_iteration', 0) for loop in converged_experiments) / len(converged_experiments)
-            summary_text += f"""
-            
-            YOLO Mode was used in {len(converged_experiments)} experiment{'s' if len(converged_experiments) > 1 else ''}, 
-            with an average convergence at iteration {avg_convergence:.1f}.
-            """
+            summary_text += (
+                f" YOLO Mode was used in {len(converged_experiments)} experiment{'s' if len(converged_experiments) > 1 else ''}, "
+                f"with an average convergence at iteration {avg_convergence:.1f}."
+            )
         
-        for para in format_markdown_for_pdf(summary_text, styles):
-            story.append(para)
+        # Create a simple paragraph without markdown processing
+        story.append(Paragraph(summary_text, styles['Normal']))
     
     story.append(Spacer(1, 0.3*inch))
     
