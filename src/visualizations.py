@@ -131,9 +131,17 @@ def create_concept_evolution_graph(iterations: List[Dict]) -> str:
 
 def compute_similarity_matrix(iterations: List[Dict]) -> np.ndarray:
     """Compute pairwise similarity between iterations"""
+    import streamlit as st
+    
+    # Get similarity mode from session state
+    similarity_mode = st.session_state.get('similarity_mode', 'reasoning_and_response')
+    
     texts = []
     for iteration in iterations:
-        text = f"{iteration.get('reasoning', '')} {iteration.get('response', '')}"
+        if similarity_mode == 'response_only':
+            text = iteration.get('response', '')
+        else:  # reasoning_and_response
+            text = f"{iteration.get('reasoning', '')} {iteration.get('response', '')}"
         texts.append(text)
     
     # Use TF-IDF for text vectorization
@@ -386,15 +394,24 @@ def create_topic_flow_sankey(iterations: List[Dict]) -> go.Figure:
 
 def calculate_divergence_score(iterations: List[Dict]) -> List[float]:
     """Calculate divergence score for each iteration"""
+    import streamlit as st
+    
     if len(iterations) < 2:
         return [0.0] * len(iterations)
+    
+    # Get similarity mode from session state
+    similarity_mode = st.session_state.get('similarity_mode', 'reasoning_and_response')
     
     scores = [0.0]  # First iteration has no divergence
     
     # Calculate semantic diversity for each iteration
     for i in range(1, len(iterations)):
-        current_text = f"{iterations[i].get('reasoning', '')} {iterations[i].get('response', '')}"
-        prev_text = f"{iterations[i-1].get('reasoning', '')} {iterations[i-1].get('response', '')}"
+        if similarity_mode == 'response_only':
+            current_text = iterations[i].get('response', '')
+            prev_text = iterations[i-1].get('response', '')
+        else:  # reasoning_and_response
+            current_text = f"{iterations[i].get('reasoning', '')} {iterations[i].get('response', '')}"
+            prev_text = f"{iterations[i-1].get('reasoning', '')} {iterations[i-1].get('response', '')}"
         
         # Use TF-IDF similarity as convergence measure
         try:

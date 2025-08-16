@@ -139,21 +139,17 @@ class ThinkingLoop:
     def create_reflection_prompt(self, reasoning: str, response: str, original_question: str, iteration: int) -> str:
         """Create a prompt asking the model to reflect on its thinking"""
         prompts = st.session_state.prompts
-        if reasoning:
-            # We successfully extracted reasoning, so we can reference it
-            template = prompts["reflection_template"]["with_reasoning"]
-            return template.format(
-                original_question=original_question,
-                reasoning=reasoning,
-                response=response
-            )
-        else:
-            # No reasoning was extracted, just work with the response
-            template = prompts["reflection_template"]["without_reasoning"]
-            return template.format(
-                original_question=original_question,
-                response=response
-            )
+        template = prompts["reflection_template"]["with_reasoning"]
+        
+        # If no reasoning was extracted, use empty string for reasoning
+        if not reasoning:
+            reasoning = "(No explicit reasoning was captured in the previous iteration)"
+        
+        return template.format(
+            original_question=original_question,
+            reasoning=reasoning,
+            response=response
+        )
     
     def run_iteration(self, question: str, previous_reasoning: str = "", previous_response: str = "", iteration_num: int = 1) -> Dict:
         """Run a single iteration of the thinking loop"""
@@ -198,7 +194,7 @@ class ThinkingLoop:
         
         return None
     
-    def run_loop(self, question: str, num_iterations: int, progress_callback=None, yolo_mode: bool = False, convergence_threshold: float = 0.99) -> List[Dict]:
+    def run_loop(self, question: str, num_iterations: int, progress_callback=None, yolo_mode: bool = False, convergence_threshold: float = 0.99, similarity_mode: str = "reasoning_and_response") -> List[Dict]:
         """Run the complete thinking loop for specified iterations
         
         Args:
@@ -207,6 +203,7 @@ class ThinkingLoop:
             progress_callback: Optional callback for progress updates
             yolo_mode: If True, stop early when convergence is detected
             convergence_threshold: Similarity threshold for convergence (default 0.99)
+            similarity_mode: What to compare for similarity ("reasoning_and_response" or "response_only")
         """
         self.iterations = []
         reasoning = ""
@@ -225,8 +222,13 @@ class ThinkingLoop:
                 
                 # Check for convergence in YOLO mode
                 if yolo_mode and i > 0:  # Need at least 2 iterations to compare
-                    prev_text = f"{self.iterations[-1]['reasoning']} {self.iterations[-1]['response']}"
-                    curr_text = f"{iteration['reasoning']} {iteration['response']}"
+                    # Choose what to compare based on similarity_mode
+                    if similarity_mode == "response_only":
+                        prev_text = self.iterations[-1]['response']
+                        curr_text = iteration['response']
+                    else:  # reasoning_and_response
+                        prev_text = f"{self.iterations[-1]['reasoning']} {self.iterations[-1]['response']}"
+                        curr_text = f"{iteration['reasoning']} {iteration['response']}"
                     
                     similarity = calculate_similarity(prev_text, curr_text)
                     iteration['similarity_to_previous'] = similarity
@@ -247,24 +249,60 @@ class ThinkingLoop:
         
         return self.iterations
 
-def load_prompts():
-    """Load prompts from configuration file"""
-    prompts_file = Path("prompts.json")
-    if prompts_file.exists():
-        with open(prompts_file, "r") as f:
-            return json.load(f)
-    else:
-        # Default prompts if file doesn't exist
-        return {
+def get_available_templates():
+    """Get list of available prompt templates"""
+    templates_dir = Path("templates")
+    if not templates_dir.exists():
+        templates_dir.mkdir(exist_ok=True)
+        # Create default template if it doesn't exist
+        default_template = {
             "system_prompts": {
                 "initial": "You are a helpful assistant. Think carefully and provide a thorough answer.",
                 "reflection": "You are a helpful assistant. Reflect critically on your previous response and provide an improved, more insightful answer."
             },
             "reflection_template": {
-                "with_reasoning": "Looking at this question again: {original_question}\n\nIn my previous attempt, I thought through it this way:\n{reasoning}\n\nAnd concluded:\n{response}\n\nLet me reconsider this problem. What did I miss? What assumptions did I make? Are there other perspectives or deeper insights I should explore? \n\nPlease provide an improved, more thorough answer that builds on or corrects my previous thinking.",
-                "without_reasoning": "Looking at this question again: {original_question}\n\nMy previous answer was:\n{response}\n\nLet me think about this more deeply. What aspects did I not fully consider? What additional insights or perspectives would improve this answer?\n\nPlease provide a more comprehensive and refined response."
+                "with_reasoning": "Looking at this question again: {original_question}\n\nIn my previous attempt, I thought through it this way:\n{reasoning}\n\nAnd concluded:\n{response}\n\nLet me reconsider this problem. What did I miss? What assumptions did I make? Are there other perspectives or deeper insights I should explore? \n\nPlease provide an improved, more thorough answer that builds on or corrects my previous thinking."
             }
         }
+        with open(templates_dir / "default.json", "w") as f:
+            json.dump(default_template, f, indent=2)
+    
+    templates = []
+    for template_file in templates_dir.glob("*.json"):
+        # Convert filename to display name (e.g., "socratic-method.json" -> "Socratic Method")
+        display_name = template_file.stem.replace("-", " ").title()
+        templates.append((display_name, template_file.stem))
+    
+    # Sort templates with Default first
+    templates.sort(key=lambda x: (x[0] != "Default", x[0]))
+    return templates
+
+def load_template(template_name: str = "default"):
+    """Load a specific prompt template"""
+    templates_dir = Path("templates")
+    template_file = templates_dir / f"{template_name}.json"
+    
+    if template_file.exists():
+        with open(template_file, "r") as f:
+            return json.load(f)
+    else:
+        # Fallback to default template
+        return load_template("default")
+
+def load_prompts():
+    """Load prompts from configuration file or default template"""
+    # First check if old prompts.json exists
+    prompts_file = Path("prompts.json")
+    if prompts_file.exists():
+        with open(prompts_file, "r") as f:
+            prompts = json.load(f)
+        # Ensure it has the new structure (remove without_reasoning if it exists)
+        if "reflection_template" in prompts and "without_reasoning" in prompts["reflection_template"]:
+            del prompts["reflection_template"]["without_reasoning"]
+        return prompts
+    else:
+        # Load default template
+        return load_template("default")
 
 def save_prompts(prompts):
     """Save prompts to configuration file"""
@@ -294,6 +332,33 @@ def show_edit_prompts_modal():
     """Show modal for editing prompts"""
     @st.dialog("✏️ Edit Prompts", width="large")
     def edit_prompts_dialog():
+        # Template selection at the top
+        st.markdown("### 📚 Template Library")
+        available_templates = get_available_templates()
+        
+        # Auto-load template when selected
+        selected_template = st.selectbox(
+            "Select Template",
+            options=[t[1] for t in available_templates],
+            format_func=lambda x: next(t[0] for t in available_templates if t[1] == x),
+            help="Select a template to instantly load pre-configured prompts",
+            key="template_selector"
+        )
+        
+        # Check if template changed and auto-load
+        if 'last_selected_template' not in st.session_state:
+            st.session_state.last_selected_template = selected_template
+        
+        if selected_template != st.session_state.last_selected_template:
+            loaded_template = load_template(selected_template)
+            st.session_state.prompts = loaded_template
+            st.session_state.last_selected_template = selected_template
+            st.success(f"✅ Loaded {selected_template.replace('-', ' ').title()} template!")
+            time.sleep(0.5)
+            st.rerun()
+        
+        st.divider()
+        
         st.markdown("### System Prompts")
         
         # Create a copy of prompts for editing
@@ -314,57 +379,29 @@ def show_edit_prompts_modal():
             help="System prompt for reflection iterations"
         )
         
-        st.markdown("### Reflection Templates")
+        st.markdown("### Reflection Template")
         st.caption("💡 Use {original_question}, {reasoning}, and {response} as placeholders")
         
         edited_prompts["reflection_template"]["with_reasoning"] = st.text_area(
-            "Reflection Template (with reasoning)",
+            "Reflection Template",
             value=st.session_state.prompts["reflection_template"]["with_reasoning"],
             height=200,
-            help="Template when reasoning was extracted from previous iteration"
-        )
-        
-        edited_prompts["reflection_template"]["without_reasoning"] = st.text_area(
-            "Reflection Template (without reasoning)",
-            value=st.session_state.prompts["reflection_template"]["without_reasoning"],
-            height=200,
-            help="Template when no reasoning was extracted"
+            help="Template for reflection prompts. The {reasoning} placeholder will show captured reasoning or a note if none was captured."
         )
         
         col1, col2, col3 = st.columns([1, 1, 1])
         with col1:
-            if st.button("💾 Save", type="primary", use_container_width=True):
+            if st.button("✅ Apply", type="primary", use_container_width=True):
                 st.session_state.prompts = edited_prompts
-                save_prompts(edited_prompts)
-                st.success("✅ Prompts saved successfully!")
-                time.sleep(1)
+                st.success("✅ Prompts applied successfully!")
+                time.sleep(0.5)
                 st.session_state.show_edit_prompts = False
                 st.rerun()
         
         with col2:
-            if st.button("🔄 Reset to Defaults", use_container_width=True):
-                default_prompts = {
-                    "system_prompts": {
-                        "initial": "You are a helpful assistant. Think carefully and provide a thorough answer.",
-                        "reflection": "You are a helpful assistant. Reflect critically on your previous response and provide an improved, more insightful answer."
-                    },
-                    "reflection_template": {
-                        "with_reasoning": "Looking at this question again: {original_question}\n\nIn my previous attempt, I thought through it this way:\n{reasoning}\n\nAnd concluded:\n{response}\n\nLet me reconsider this problem. What did I miss? What assumptions did I make? Are there other perspectives or deeper insights I should explore? \n\nPlease provide an improved, more thorough answer that builds on or corrects my previous thinking.",
-                        "without_reasoning": "Looking at this question again: {original_question}\n\nMy previous answer was:\n{response}\n\nLet me think about this more deeply. What aspects did I not fully consider? What additional insights or perspectives would improve this answer?\n\nPlease provide a more comprehensive and refined response."
-                    },
-                    "reasoning_extraction": {
-                        "think_tag_start": "<think>",
-                        "think_tag_end": "</think>",
-                        "reasoning_field": "reasoning"
-                    },
-                    "ui_messages": {
-                        "test_connection": "Say 'Connection successful' if you can hear me.",
-                        "no_reasoning_found": "*No explicit reasoning captured*",
-                        "no_response": "No response"
-                    }
-                }
+            if st.button("🔄 Reset to Default", use_container_width=True):
+                default_prompts = load_template("default")
                 st.session_state.prompts = default_prompts
-                save_prompts(default_prompts)
                 st.success("🔄 Reset to default prompts")
                 time.sleep(1)
                 st.rerun()
@@ -440,7 +477,7 @@ def main():
             else:
                 model_name = st.text_input(
                     "Model Name",
-                    value="gpt-oss-20b",
+                    value="gpt-oss:20b",
                     help="Enter model name manually or click 'Load Available Models'"
                 )
             
@@ -536,7 +573,7 @@ def main():
             else:
                 model_name = st.text_input(
                     "Model Name",
-                    value="deepseek/deepseek-r1-0107:free",
+                    value="openai/gpt-oss-20b:free",
                     help="Enter the OpenRouter model name (e.g., provider/model-name)"
                 )
             
@@ -562,6 +599,7 @@ def main():
         )
         
         convergence_threshold = 0.99  # Default value
+        similarity_mode = "reasoning_and_response"  # Default mode
         if yolo_mode:
             convergence_threshold = st.slider(
                 "Convergence Threshold",
@@ -571,7 +609,20 @@ def main():
                 step=0.01,
                 help="Similarity threshold to detect convergence (0.99 = 99% similar)"
             )
-            st.info(f"🎯 YOLO Mode: Will run indefinitely until convergence is detected (similarity ≥ {convergence_threshold:.0%}). Iteration slider is ignored. Safety limit: 100 iterations.")
+            
+            # Add similarity comparison mode toggle
+            similarity_mode = st.radio(
+                "Similarity Comparison Mode",
+                ["reasoning_and_response", "response_only"],
+                format_func=lambda x: "Reasoning + Response" if x == "reasoning_and_response" else "Response Only",
+                help="Choose what to compare for similarity: full content (reasoning + response) or just the response",
+                horizontal=True
+            )
+            
+            st.info(f"🎯 YOLO Mode: Will run indefinitely until convergence is detected (similarity ≥ {convergence_threshold:.0%}). Comparing: {similarity_mode.replace('_', ' ').title()}. Safety limit: 100 iterations.")
+        
+        # Always store similarity mode in session state for use in visualizations
+        st.session_state.similarity_mode = similarity_mode
         
         # Display token usage and performance metrics
         if st.session_state.total_tokens_used > 0:
@@ -625,7 +676,7 @@ def main():
         
         col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
         with col_btn1:
-            start_button = st.button("🚀 Start Loop", type="primary", use_container_width=True)
+            start_button = st.button("🚀 Go!", type="primary", use_container_width=True)
         with col_btn2:
             if st.button("✏️ Prompts", use_container_width=True):
                 st.session_state.show_edit_prompts = True
@@ -1027,8 +1078,15 @@ def main():
                 # Check for convergence in YOLO mode
                 converged = False
                 if yolo_mode and current_iteration >= 1:  # Need at least 2 iterations to compare (0-indexed)
-                    prev_text = f"{prev_reasoning} {prev_response}"
-                    curr_text = f"{iteration['reasoning']} {iteration['response']}"
+                    # Use the similarity mode from session state
+                    similarity_mode_to_use = st.session_state.get('similarity_mode', 'reasoning_and_response')
+                    
+                    if similarity_mode_to_use == "response_only":
+                        prev_text = prev_response
+                        curr_text = iteration['response']
+                    else:  # reasoning_and_response
+                        prev_text = f"{prev_reasoning} {prev_response}"
+                        curr_text = f"{iteration['reasoning']} {iteration['response']}"
                     
                     similarity = calculate_similarity(prev_text, curr_text)
                     iteration['similarity_to_previous'] = similarity

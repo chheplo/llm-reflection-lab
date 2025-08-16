@@ -21,6 +21,11 @@ This project implements a **thinking loop** system where LLMs iteratively improv
 - **Multi-Model Support**: Works with Ollama, vLLM, and OpenRouter APIs
 - **Reasoning Extraction**: Captures explicit reasoning from `<think>` tags or native fields
 - **🎯 YOLO Mode**: Run iterations until convergence is detected automatically
+  - Configurable convergence threshold (80-99%)
+  - Choose similarity comparison mode: "Reasoning + Response" or "Response Only"
+- **📚 Prompt Templates**: Pre-configured epistemic approaches
+  - Socratic Method, Empirical-Scientific, Dialectical Synthesis, Systems Thinking, and more
+  - Easy template switching via dropdown in prompt editor
 - **Customizable Prompts**: Edit system prompts and reflection templates via UI
 - **Auto-Save**: Experiments saved automatically in JSON format
 - **Export**: Generate HTML reports of complete experiments
@@ -121,10 +126,16 @@ The app will open at `http://localhost:8501`
 
 ### 3. Customize Prompts
 
-Click "✏️ Prompts" to edit:
-- System prompts for initial/reflection iterations
-- Reflection templates with placeholders
-- Save or reset to defaults
+Click "✏️ Prompts" to:
+- **Load Templates**: Choose from epistemic approaches
+  - Default: Standard iterative reasoning
+  - Socratic Method: Question-driven inquiry
+  - Empirical-Scientific: Evidence-based analysis
+  - Dialectical Synthesis: Thesis-antithesis resolution
+  - Systems Thinking: Holistic interconnected analysis
+  - Iterative Refinement: Precision-focused improvement
+- **Edit Prompts**: Customize system and reflection prompts
+- **Save Changes**: Store your customizations
 
 ## 📁 Project Structure
 
@@ -133,7 +144,14 @@ llm-reflection-lab/
 ├── app.py                 # Main Streamlit application
 ├── src/
 │   └── visualizations.py  # Visualization modules
-├── prompts.json          # Customizable prompt templates
+├── templates/            # Prompt template library
+│   ├── default.json      # Standard reasoning template
+│   ├── socratic-method.json
+│   ├── empirical-scientific.json
+│   ├── dialectical-synthesis.json
+│   ├── systems-thinking.json
+│   └── iterative-refinement.json
+├── prompts.json          # Current active prompts (user customized)
 ├── saves/                # Auto-saved experiments
 ├── pyproject.toml        # Project dependencies (uv)
 ├── requirements.txt      # Project dependencies (pip)
@@ -171,6 +189,9 @@ When enabled, YOLO Mode:
 - **Real-time Monitoring**: Shows convergence progress chart during execution
 - **Efficiency**: Stops early when the model's responses stabilize
 - **Configurable Threshold**: Adjust sensitivity from 80% to 99% similarity
+- **Comparison Modes**: 
+  - "Reasoning + Response": Compare full thought process
+  - "Response Only": Focus on answer convergence
 
 ## 📊 Example Insights
 

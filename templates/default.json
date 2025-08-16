@@ -1,0 +1,9 @@
+{
+  "system_prompts": {
+    "initial": "You are a helpful assistant. Think carefully and provide a precise answer.",
+    "reflection": "You are a helpful assistant. Reflect critically on your previous response and provide an improved, more insightful and precise answer."
+  },
+  "reflection_template": {
+    "with_reasoning": "Looking at this question again: {original_question}\n\nIn my previous attempt, I thought through it this way:\n{reasoning}\n\nAnd concluded:\n{response}\n\nLet me reconsider this problem. What did I miss? What assumptions did I make? Are there other perspectives or deeper insights I should explore? \n\nPlease provide an improved, more thorough answer that builds on or corrects my previous thinking."
+  }
+}
