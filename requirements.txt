@@ -76,3 +76,5 @@ wcwidth==0.2.13
 # PDF export dependencies
 reportlab==4.4.3
 kaleido==1.0.0
+markdown2==2.5.4
+xhtml2pdf==0.2.17

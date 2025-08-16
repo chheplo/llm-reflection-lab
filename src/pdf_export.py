@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import plotly.graph_objects as go
 import plotly.io as pio
+import markdown2
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -166,182 +167,120 @@ def clean_text_for_pdf(text: str) -> str:
 
 
 def format_markdown_for_pdf(text: str, styles) -> List[Paragraph]:
-    """Convert markdown-like text to ReportLab Paragraph objects with proper formatting"""
+    """Convert markdown text to ReportLab Paragraph objects using markdown2"""
     if not text:
         return [Paragraph("No content", styles['Normal'])]
     
     # Clean the text first
     text = clean_text_for_pdf(text)
     
-    paragraphs = []
-    lines = text.split('\n')
-    current_para = []
-    in_code_block = False
-    code_block_content = []
+    # Convert markdown to HTML using markdown2
+    html_text = markdown2.markdown(
+        text,
+        extras=[
+            'fenced-code-blocks',
+            'tables',
+            'break-on-newline',
+            'code-friendly',
+            'cuddled-lists',
+            'smarty-pants'
+        ]
+    )
     
-    for line in lines:
-        # Handle code blocks
-        if line.strip().startswith('```'):
-            if in_code_block:
-                # End code block
-                if code_block_content:
-                    code_text = '<br/>'.join(code_block_content)
-                    paragraphs.append(Paragraph(
-                        f'<font face="Courier" size="9" color="#333333">{code_text}</font>',
-                        styles.get('CodeStyle', styles['Normal'])
-                    ))
-                    code_block_content = []
-                in_code_block = False
-            else:
-                # Start code block - first flush current paragraph
-                if current_para:
-                    para_text = ' '.join(current_para)
-                    para_text = process_inline_markdown(para_text)
-                    paragraphs.append(Paragraph(para_text, styles['Normal']))
-                    current_para = []
-                in_code_block = True
+    # Process the HTML for ReportLab compatibility
+    html_text = process_html_for_reportlab(html_text)
+    
+    # Split by block-level elements and create paragraphs
+    paragraphs = []
+    
+    # Split by common block elements
+    blocks = re.split(r'(<p>.*?</p>|<h[1-6]>.*?</h[1-6]>|<pre>.*?</pre>|<blockquote>.*?</blockquote>|<ul>.*?</ul>|<ol>.*?</ol>)', html_text, flags=re.DOTALL)
+    
+    for block in blocks:
+        if not block or block.strip() == '':
             continue
+            
+        block = block.strip()
         
-        if in_code_block:
-            # Escape HTML characters in code
-            line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            code_block_content.append(line)
-            continue
+        # Headers
+        if block.startswith('<h1>'):
+            content = re.sub(r'</?h1>', '', block)
+            paragraphs.append(Paragraph(f'<b><font size="16">{content}</font></b>', styles['Heading1']))
+        elif block.startswith('<h2>'):
+            content = re.sub(r'</?h2>', '', block)
+            paragraphs.append(Paragraph(f'<b><font size="14">{content}</font></b>', styles['Heading2']))
+        elif block.startswith('<h3>'):
+            content = re.sub(r'</?h3>', '', block)
+            paragraphs.append(Paragraph(f'<b><font size="12">{content}</font></b>', styles.get('Heading3', styles['Heading2'])))
         
-        # Handle headers with proper styling
-        if line.startswith('### '):
-            if current_para:
-                para_text = ' '.join(current_para)
-                para_text = process_inline_markdown(para_text)
-                paragraphs.append(Paragraph(para_text, styles['Normal']))
-                current_para = []
-            header_text = process_inline_markdown(line[4:])
-            header_text = f'<b><font size="12">{header_text}</font></b>'
-            paragraphs.append(Paragraph(header_text, styles.get('Heading3', styles['Heading2'])))
-            continue
-        elif line.startswith('## '):
-            if current_para:
-                para_text = ' '.join(current_para)
-                para_text = process_inline_markdown(para_text)
-                paragraphs.append(Paragraph(para_text, styles['Normal']))
-                current_para = []
-            header_text = process_inline_markdown(line[3:])
-            header_text = f'<b><font size="14">{header_text}</font></b>'
-            paragraphs.append(Paragraph(header_text, styles['Heading2']))
-            continue
-        elif line.startswith('# '):
-            if current_para:
-                para_text = ' '.join(current_para)
-                para_text = process_inline_markdown(para_text)
-                paragraphs.append(Paragraph(para_text, styles['Normal']))
-                current_para = []
-            header_text = process_inline_markdown(line[2:])
-            header_text = f'<b><font size="16">{header_text}</font></b>'
-            paragraphs.append(Paragraph(header_text, styles['Heading1']))
-            continue
-        
-        # Handle lists with proper bullets
-        if line.strip().startswith('- ') or line.strip().startswith('* '):
-            if current_para:
-                para_text = ' '.join(current_para)
-                para_text = process_inline_markdown(para_text)
-                paragraphs.append(Paragraph(para_text, styles['Normal']))
-                current_para = []
-            list_text = line.strip()[2:] if len(line.strip()) > 2 else ''
-            # Process inline formatting in list items
-            list_text = process_inline_markdown(list_text)
-            paragraphs.append(Paragraph(f"• {list_text}", styles.get('BulletStyle', styles['Normal'])))
-            continue
-        
-        # Handle numbered lists
-        import re
-        if re.match(r'^\d+\.\s', line.strip()):
-            if current_para:
-                para_text = ' '.join(current_para)
-                para_text = process_inline_markdown(para_text)
-                paragraphs.append(Paragraph(para_text, styles['Normal']))
-                current_para = []
-            # Process inline formatting in list items
-            list_text = process_inline_markdown(line.strip())
-            paragraphs.append(Paragraph(list_text, styles.get('BulletStyle', styles['Normal'])))
-            continue
-        
-        # Handle blockquotes
-        if line.strip().startswith('>'):
-            if current_para:
-                para_text = ' '.join(current_para)
-                para_text = process_inline_markdown(para_text)
-                paragraphs.append(Paragraph(para_text, styles['Normal']))
-                current_para = []
-            quote_text = line.strip()[1:].strip()
-            quote_text = process_inline_markdown(quote_text)
+        # Code blocks
+        elif block.startswith('<pre>'):
+            content = re.sub(r'</?pre>', '', block)
+            content = re.sub(r'</?code[^>]*>', '', content)
+            # Escape HTML entities in code
+            content = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
             paragraphs.append(Paragraph(
-                f'<i><font color="#666666">{quote_text}</font></i>',
+                f'<font face="Courier" size="9" color="#333333">{content}</font>',
+                styles.get('CodeStyle', styles['Normal'])
+            ))
+        
+        # Blockquotes
+        elif block.startswith('<blockquote>'):
+            content = re.sub(r'</?blockquote>', '', block)
+            content = re.sub(r'</?p>', '', content)
+            paragraphs.append(Paragraph(
+                f'<i><font color="#666666">{content}</font></i>',
                 styles['Normal']
             ))
-            continue
         
-        # Regular text
-        if line.strip():
-            # Don't process inline markdown yet, just collect the lines
-            current_para.append(line)
-        elif current_para:
-            # Empty line indicates paragraph break
-            para_text = ' '.join(current_para)
-            para_text = process_inline_markdown(para_text)
-            paragraphs.append(Paragraph(para_text, styles['Normal']))
-            current_para = []
-    
-    # Don't forget the last paragraph or code block
-    if in_code_block and code_block_content:
-        code_text = '<br/>'.join(code_block_content)
-        paragraphs.append(Paragraph(
-            f'<font face="Courier" size="9" color="#333333">{code_text}</font>',
-            styles.get('CodeStyle', styles['Normal'])
-        ))
-    elif current_para:
-        para_text = ' '.join(current_para)
-        para_text = process_inline_markdown(para_text)
-        paragraphs.append(Paragraph(para_text, styles['Normal']))
+        # Lists
+        elif block.startswith('<ul>'):
+            # Process unordered list
+            items = re.findall(r'<li>(.*?)</li>', block, re.DOTALL)
+            for item in items:
+                item = re.sub(r'</?p>', '', item).strip()
+                paragraphs.append(Paragraph(f"• {item}", styles.get('BulletStyle', styles['Normal'])))
+        
+        elif block.startswith('<ol>'):
+            # Process ordered list
+            items = re.findall(r'<li>(.*?)</li>', block, re.DOTALL)
+            for i, item in enumerate(items, 1):
+                item = re.sub(r'</?p>', '', item).strip()
+                paragraphs.append(Paragraph(f"{i}. {item}", styles.get('BulletStyle', styles['Normal'])))
+        
+        # Regular paragraphs
+        elif block.startswith('<p>'):
+            content = re.sub(r'</?p>', '', block)
+            if content.strip():
+                paragraphs.append(Paragraph(content, styles['Normal']))
+        
+        # Any other text
+        elif block.strip() and not block.startswith('<'):
+            paragraphs.append(Paragraph(block, styles['Normal']))
     
     return paragraphs if paragraphs else [Paragraph("No content", styles['Normal'])]
 
 
-def process_inline_markdown(text: str) -> str:
-    """Process inline markdown formatting (bold, italic, code)"""
-    import re
+def process_html_for_reportlab(html_text: str) -> str:
+    """Process HTML from markdown2 to be compatible with ReportLab"""
+    # Convert strong to bold
+    html_text = html_text.replace('<strong>', '<b>').replace('</strong>', '</b>')
     
-    # First escape any existing HTML entities
-    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    # Convert em to italic
+    html_text = html_text.replace('<em>', '<i>').replace('</em>', '</i>')
     
-    # Process inline code first (to protect it from other formatting)
-    # Inline code: `code`
-    code_parts = []
-    def save_code(match):
-        code_parts.append(f'<font face="Courier" color="#666666">{match.group(1)}</font>')
-        return f'§CODE{len(code_parts)-1}§'
-    text = re.sub(r'`([^`]+)`', save_code, text)
+    # Handle inline code
+    html_text = re.sub(r'<code>([^<]+)</code>', r'<font face="Courier" color="#666666">\1</font>', html_text)
     
-    # Links: [text](url) - just show the text
-    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+    # Remove links but keep text
+    html_text = re.sub(r'<a[^>]*>([^<]+)</a>', r'\1', html_text)
     
-    # Bold italic: ***text*** or ___text___ (process before individual bold/italic)
-    text = re.sub(r'\*\*\*([^*]+)\*\*\*', r'<b><i>\1</i></b>', text)
-    text = re.sub(r'___([^_]+)___', r'<b><i>\1</i></b>', text)
+    # Handle line breaks
+    html_text = html_text.replace('\n', '<br/>')
     
-    # Bold text: **text** or __text__
-    text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
-    text = re.sub(r'__([^_]+)__', r'<b>\1</b>', text)
-    
-    # Italic text: *text* or _text_ (avoiding bold markers)
-    text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>\1</i>', text)
-    text = re.sub(r'(?<!_)_([^_]+)_(?!_)', r'<i>\1</i>', text)
-    
-    # Restore code parts
-    for i, code in enumerate(code_parts):
-        text = text.replace(f'§CODE{i}§', code)
-    
-    return text
+    return html_text
+
+
 
 
 def create_visualization_charts(iterations: List[Dict], similarity_mode: str = "response_only") -> Dict:
@@ -840,7 +779,7 @@ def create_pdf_report(thinking_loops: List[Dict], visualizations: Optional[Dict]
             if len(row_charts) == 1:
                 story.append(row_charts[0])
             else:
-                chart_table_data.append(row_charts)
+                chart_table_data = [row_charts]
                 chart_table = Table(chart_table_data)
                 story.append(chart_table)
             story.append(Spacer(1, 0.2*inch))
@@ -953,16 +892,12 @@ def create_pdf_report(thinking_loops: List[Dict], visualizations: Optional[Dict]
             exp_data.append(['📊 Final Similarity:', f"{loop.get('final_similarity', 0):.3f}"])
         
         exp_table = Table(exp_data, colWidths=[1.5*inch, 4.5*inch])
-        exp_table.setStyle(TableStyle([
-            # Alternating row colors
+        
+        # Build styles dynamically based on number of rows
+        table_styles = [
+            # Header row
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#e8f4f8')),
-            ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#f0f8fc')),
-            ('BACKGROUND', (0, 3), (-1, 3), colors.HexColor('#e8f4f8')),
-            # Convergence rows if present
-            ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#d4f1d4')),
-            ('BACKGROUND', (0, 5), (-1, 5), colors.HexColor('#e8f8e8')),
             # Font styling
             ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 10),
@@ -972,7 +907,19 @@ def create_pdf_report(thinking_loops: List[Dict], visualizations: Optional[Dict]
             ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.white),
             ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#3498db')),
-        ]))
+        ]
+        
+        # Add alternating row colors for existing rows only
+        for i in range(1, len(exp_data)):
+            if i < 4:
+                # Regular rows with alternating colors
+                color = colors.HexColor('#e8f4f8') if i % 2 == 1 else colors.HexColor('#f0f8fc')
+            else:
+                # Convergence rows with green tint
+                color = colors.HexColor('#d4f1d4') if i % 2 == 0 else colors.HexColor('#e8f8e8')
+            table_styles.append(('BACKGROUND', (0, i), (-1, i), color))
+        
+        exp_table.setStyle(TableStyle(table_styles))
         story.append(exp_table)
         story.append(Spacer(1, 0.2*inch))
         
