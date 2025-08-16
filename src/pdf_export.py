@@ -195,7 +195,8 @@ def format_markdown_for_pdf(text: str, styles) -> List[Paragraph]:
             else:
                 # Start code block - first flush current paragraph
                 if current_para:
-                    para_text = '<br/>'.join(current_para)
+                    para_text = ' '.join(current_para)
+                    para_text = process_inline_markdown(para_text)
                     paragraphs.append(Paragraph(para_text, styles['Normal']))
                     current_para = []
                 in_code_block = True
@@ -210,33 +211,40 @@ def format_markdown_for_pdf(text: str, styles) -> List[Paragraph]:
         # Handle headers with proper styling
         if line.startswith('### '):
             if current_para:
-                para_text = '<br/>'.join(current_para)
+                para_text = ' '.join(current_para)
+                para_text = process_inline_markdown(para_text)
                 paragraphs.append(Paragraph(para_text, styles['Normal']))
                 current_para = []
-            header_text = f'<b><font size="12">{line[4:]}</font></b>'
+            header_text = process_inline_markdown(line[4:])
+            header_text = f'<b><font size="12">{header_text}</font></b>'
             paragraphs.append(Paragraph(header_text, styles.get('Heading3', styles['Heading2'])))
             continue
         elif line.startswith('## '):
             if current_para:
-                para_text = '<br/>'.join(current_para)
+                para_text = ' '.join(current_para)
+                para_text = process_inline_markdown(para_text)
                 paragraphs.append(Paragraph(para_text, styles['Normal']))
                 current_para = []
-            header_text = f'<b><font size="14">{line[3:]}</font></b>'
+            header_text = process_inline_markdown(line[3:])
+            header_text = f'<b><font size="14">{header_text}</font></b>'
             paragraphs.append(Paragraph(header_text, styles['Heading2']))
             continue
         elif line.startswith('# '):
             if current_para:
-                para_text = '<br/>'.join(current_para)
+                para_text = ' '.join(current_para)
+                para_text = process_inline_markdown(para_text)
                 paragraphs.append(Paragraph(para_text, styles['Normal']))
                 current_para = []
-            header_text = f'<b><font size="16">{line[2:]}</font></b>'
+            header_text = process_inline_markdown(line[2:])
+            header_text = f'<b><font size="16">{header_text}</font></b>'
             paragraphs.append(Paragraph(header_text, styles['Heading1']))
             continue
         
         # Handle lists with proper bullets
         if line.strip().startswith('- ') or line.strip().startswith('* '):
             if current_para:
-                para_text = '<br/>'.join(current_para)
+                para_text = ' '.join(current_para)
+                para_text = process_inline_markdown(para_text)
                 paragraphs.append(Paragraph(para_text, styles['Normal']))
                 current_para = []
             list_text = line.strip()[2:] if len(line.strip()) > 2 else ''
@@ -249,7 +257,8 @@ def format_markdown_for_pdf(text: str, styles) -> List[Paragraph]:
         import re
         if re.match(r'^\d+\.\s', line.strip()):
             if current_para:
-                para_text = '<br/>'.join(current_para)
+                para_text = ' '.join(current_para)
+                para_text = process_inline_markdown(para_text)
                 paragraphs.append(Paragraph(para_text, styles['Normal']))
                 current_para = []
             # Process inline formatting in list items
@@ -260,7 +269,8 @@ def format_markdown_for_pdf(text: str, styles) -> List[Paragraph]:
         # Handle blockquotes
         if line.strip().startswith('>'):
             if current_para:
-                para_text = '<br/>'.join(current_para)
+                para_text = ' '.join(current_para)
+                para_text = process_inline_markdown(para_text)
                 paragraphs.append(Paragraph(para_text, styles['Normal']))
                 current_para = []
             quote_text = line.strip()[1:].strip()
@@ -273,12 +283,12 @@ def format_markdown_for_pdf(text: str, styles) -> List[Paragraph]:
         
         # Regular text
         if line.strip():
-            # Apply inline formatting
-            formatted_line = process_inline_markdown(line)
-            current_para.append(formatted_line)
+            # Don't process inline markdown yet, just collect the lines
+            current_para.append(line)
         elif current_para:
             # Empty line indicates paragraph break
-            para_text = '<br/>'.join(current_para)
+            para_text = ' '.join(current_para)
+            para_text = process_inline_markdown(para_text)
             paragraphs.append(Paragraph(para_text, styles['Normal']))
             current_para = []
     
@@ -290,7 +300,8 @@ def format_markdown_for_pdf(text: str, styles) -> List[Paragraph]:
             styles.get('CodeStyle', styles['Normal'])
         ))
     elif current_para:
-        para_text = '<br/>'.join(current_para)
+        para_text = ' '.join(current_para)
+        para_text = process_inline_markdown(para_text)
         paragraphs.append(Paragraph(para_text, styles['Normal']))
     
     return paragraphs if paragraphs else [Paragraph("No content", styles['Normal'])]
@@ -300,22 +311,35 @@ def process_inline_markdown(text: str) -> str:
     """Process inline markdown formatting (bold, italic, code)"""
     import re
     
-    # Escape existing HTML
+    # First escape any existing HTML entities
     text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     
-    # Bold text: **text** or __text__
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-    text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
-    
-    # Italic text: *text* or _text_ (but not if part of bold)
-    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', text)
-    text = re.sub(r'(?<!_)_(?!_)(.+?)(?<!_)_(?!_)', r'<i>\1</i>', text)
-    
+    # Process inline code first (to protect it from other formatting)
     # Inline code: `code`
-    text = re.sub(r'`(.+?)`', r'<font face="Courier" color="#666666">\1</font>', text)
+    code_parts = []
+    def save_code(match):
+        code_parts.append(f'<font face="Courier" color="#666666">{match.group(1)}</font>')
+        return f'§CODE{len(code_parts)-1}§'
+    text = re.sub(r'`([^`]+)`', save_code, text)
     
     # Links: [text](url) - just show the text
-    text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
+    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+    
+    # Bold italic: ***text*** or ___text___ (process before individual bold/italic)
+    text = re.sub(r'\*\*\*([^*]+)\*\*\*', r'<b><i>\1</i></b>', text)
+    text = re.sub(r'___([^_]+)___', r'<b><i>\1</i></b>', text)
+    
+    # Bold text: **text** or __text__
+    text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r'__([^_]+)__', r'<b>\1</b>', text)
+    
+    # Italic text: *text* or _text_ (avoiding bold markers)
+    text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>\1</i>', text)
+    text = re.sub(r'(?<!_)_([^_]+)_(?!_)', r'<i>\1</i>', text)
+    
+    # Restore code parts
+    for i, code in enumerate(code_parts):
+        text = text.replace(f'§CODE{i}§', code)
     
     return text
 
