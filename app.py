@@ -22,6 +22,9 @@ from src.visualizations import (
     compute_all_visualizations_async
 )
 
+# Import PDF export module
+from src.pdf_export import export_to_pdf as create_pdf_report
+
 # Page configuration
 st.set_page_config(
     page_title="LLM Reflection Lab",
@@ -194,7 +197,7 @@ class ThinkingLoop:
         
         return None
     
-    def run_loop(self, question: str, num_iterations: int, progress_callback=None, yolo_mode: bool = False, convergence_threshold: float = 0.99, similarity_mode: str = "reasoning_and_response") -> List[Dict]:
+    def run_loop(self, question: str, num_iterations: int, progress_callback=None, yolo_mode: bool = False, convergence_threshold: float = 0.99, similarity_mode: str = "response_only") -> List[Dict]:
         """Run the complete thinking loop for specified iterations
         
         Args:
@@ -203,7 +206,7 @@ class ThinkingLoop:
             progress_callback: Optional callback for progress updates
             yolo_mode: If True, stop early when convergence is detected
             convergence_threshold: Similarity threshold for convergence (default 0.99)
-            similarity_mode: What to compare for similarity ("reasoning_and_response" or "response_only")
+            similarity_mode: What to compare for similarity ("response_only" or "reasoning_and_response")
         """
         self.iterations = []
         reasoning = ""
@@ -291,8 +294,8 @@ def load_template(template_name: str = "default"):
 
 def load_prompts():
     """Load prompts from configuration file or default template"""
-    # First check if old prompts.json exists
-    prompts_file = Path("prompts.json")
+    # First check if prompts.json exists in src folder
+    prompts_file = Path("src/prompts.json")
     if prompts_file.exists():
         with open(prompts_file, "r") as f:
             prompts = json.load(f)
@@ -306,7 +309,7 @@ def load_prompts():
 
 def save_prompts(prompts):
     """Save prompts to configuration file"""
-    with open("prompts.json", "w") as f:
+    with open("src/prompts.json", "w") as f:
         json.dump(prompts, f, indent=2)
 
 def initialize_session_state():
@@ -599,7 +602,7 @@ def main():
         )
         
         convergence_threshold = 0.99  # Default value
-        similarity_mode = "reasoning_and_response"  # Default mode
+        similarity_mode = "response_only"  # Default mode - Response Only
         if yolo_mode:
             convergence_threshold = st.slider(
                 "Convergence Threshold",
@@ -610,12 +613,12 @@ def main():
                 help="Similarity threshold to detect convergence (0.99 = 99% similar)"
             )
             
-            # Add similarity comparison mode toggle
+            # Add similarity comparison mode toggle - Response Only first
             similarity_mode = st.radio(
                 "Similarity Comparison Mode",
-                ["reasoning_and_response", "response_only"],
-                format_func=lambda x: "Reasoning + Response" if x == "reasoning_and_response" else "Response Only",
-                help="Choose what to compare for similarity: full content (reasoning + response) or just the response",
+                ["response_only", "reasoning_and_response"],
+                format_func=lambda x: "Response Only" if x == "response_only" else "Reasoning + Response",
+                help="Choose what to compare for similarity: just the response or full content (reasoning + response)",
                 horizontal=True
             )
             
@@ -684,7 +687,18 @@ def main():
         with col_btn3:
             clear_button = st.button("🧹 Clear", use_container_width=True)
         with col_btn4:
-            export_button = st.button("📤 Export", use_container_width=True)
+            # Create a popover for export options
+            with st.popover("📤 Export", use_container_width=True):
+                st.markdown("**Export Format:**")
+                export_format = st.radio(
+                    "Choose format",
+                    ["PDF Report", "HTML Report"],
+                    label_visibility="collapsed"
+                )
+                if st.button("📥 Download", type="primary", use_container_width=True):
+                    st.session_state.export_format = export_format
+                    st.session_state.trigger_export = True
+                    st.rerun()
         
         if clear_button:
             # Clear all experiment data but keep configuration
@@ -701,16 +715,74 @@ def main():
             time.sleep(0.5)
             st.rerun()
         
-        if export_button:
-            # Export the current experiment to PDF
-            if st.session_state.thinking_loops or ("active_loop" in st.session_state and st.session_state.active_loop):
-                export_to_pdf()
+        # Handle export trigger
+        if st.session_state.get('trigger_export', False):
+            st.session_state.trigger_export = False
+            loops = st.session_state.get("thinking_loops", [])
+            if "active_loop" in st.session_state and st.session_state.active_loop:
+                loops = loops + [st.session_state.active_loop]
+            
+            if loops:
+                export_format = st.session_state.get('export_format', 'PDF Report')
+                if export_format == "PDF Report":
+                    # Generate PDF
+                    try:
+                        # Create LLM client for filename generation (using session state configuration)
+                        llm_client = None
+                        try:
+                            # Try to get the last used configuration from session state
+                            if hasattr(st.session_state, 'last_llm_config'):
+                                config = st.session_state.last_llm_config
+                                llm_client = OpenAIReasoningClient(
+                                    config['api_key'], 
+                                    config['model_name'], 
+                                    config['base_url']
+                                )
+                        except Exception:
+                            pass
+                        
+                        pdf_bytes, smart_filename = create_pdf_report(
+                            thinking_loops=loops,
+                            total_tokens=st.session_state.get('total_tokens_used', 0),
+                            total_time=st.session_state.get('total_elapsed_time', 0),
+                            similarity_mode=st.session_state.get('similarity_mode', 'response_only'),
+                            llm_client=llm_client
+                        )
+                        
+                        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        # Use smart filename with timestamp
+                        filename = f"{smart_filename}_{timestamp_str}.pdf"
+                        
+                        st.download_button(
+                            label="📥 Download PDF Report",
+                            data=pdf_bytes,
+                            file_name=filename,
+                            mime="application/pdf",
+                            use_container_width=True,
+                            key="download_pdf"
+                        )
+                        st.success(f"✅ PDF Report generated! ({filename})")
+                    except Exception as e:
+                        import traceback
+                        st.error(f"Failed to generate PDF: {str(e)}")
+                        if st.session_state.get("debug_mode", False):
+                            st.code(traceback.format_exc())
+                else:
+                    # Generate HTML
+                    export_to_html()
             else:
                 st.warning("No experiments to export.")
         
         if start_button:
             if question and (server_type in ["Ollama (Local)", "vLLM"] or (server_type == "OpenRouter" and api_key)):
                 st.session_state.current_question = question
+                
+                # Save LLM configuration for later use (e.g., filename generation)
+                st.session_state.last_llm_config = {
+                    'api_key': api_key,
+                    'model_name': model_name,
+                    'base_url': base_url
+                }
                 
                 # Initialize a new thinking loop in session state
                 if "active_loop" not in st.session_state:
@@ -1285,7 +1357,7 @@ def markdown_to_html(text):
     
     return text
 
-def export_to_pdf():
+def export_to_html():
     """Export the current experiment to a readable HTML format"""
     try:
         loops = st.session_state.get("thinking_loops", [])
@@ -1452,17 +1524,18 @@ def export_to_pdf():
         
         # Offer download
         st.download_button(
-            label="📥 Download Report",
+            label="📥 Download HTML Report",
             data=html,
             file_name=filename,
             mime="text/html",
-            use_container_width=True
+            use_container_width=True,
+            key="download_html"
         )
         
-        st.success("✅ Report generated! Click above to download.")
+        st.success("✅ HTML Report generated! Click above to download.")
         
     except Exception as e:
-        st.error(f"Failed to export: {str(e)}")
+        st.error(f"Failed to export HTML: {str(e)}")
 
 if __name__ == "__main__":
     main()
